@@ -1,3 +1,4 @@
+export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import { z } from "zod";
@@ -53,16 +54,18 @@ export const POST = async (request: Request) => {
 
   const buffer = await Packer.toBuffer(doc);
 
-// Convert Buffer -> Uint8Array view (no copy)
-const docxBytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-
-return new Response(docxBytes, {
-  status: 200,
-  headers: {
-    "Content-Type":
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "Content-Disposition": `attachment; filename="${filename}"`,
-    "Cache-Control": "no-store",
-  },
-});
+  // Convert Buffer -> ArrayBuffer (widely accepted BodyInit)
+  const arrayBuffer = buffer.buffer.slice(
+    buffer.byteOffset,
+    buffer.byteOffset + buffer.byteLength
+  );
+  
+  return new Response(arrayBuffer, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Cache-Control": "no-store",
+    },
+  });
 };
