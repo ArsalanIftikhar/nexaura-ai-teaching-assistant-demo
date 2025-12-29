@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import { z } from "zod";
+export const runtime = "nodejs"; // ensure Node runtime for docx library
 
 const requestSchema = z.object({
   title: z.string().min(1),
@@ -50,10 +51,6 @@ export const POST = async (request: Request) => {
       },
     ],
   });
-
-  export const runtime = "nodejs"; // ensure Node runtime for docx library
-
-  // ... after you have: const buffer = await Packer.toBuffer(doc);
   
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
