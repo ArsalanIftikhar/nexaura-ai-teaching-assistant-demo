@@ -51,16 +51,17 @@ export const POST = async (request: Request) => {
     ],
   });
 
-  // Convert Buffer -> ArrayBuffer (widely accepted BodyInit)
-  const arrayBuffer = buffer.buffer.slice(
-    buffer.byteOffset,
-    buffer.byteOffset + buffer.byteLength
-  );
+  export const runtime = "nodejs"; // ensure Node runtime for docx library
+
+  // ... after you have: const buffer = await Packer.toBuffer(doc);
   
-  return new Response(arrayBuffer, {
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+  
+  return new Response(blob, {
     status: 200,
     headers: {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "Content-Disposition": `attachment; filename="${filename}"`,
       "Cache-Control": "no-store",
     },
