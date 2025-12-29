@@ -1,4 +1,3 @@
-export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import { z } from "zod";
@@ -51,8 +50,6 @@ export const POST = async (request: Request) => {
       },
     ],
   });
-
-  const buffer = await Packer.toBuffer(doc);
 
   // Convert Buffer -> ArrayBuffer (widely accepted BodyInit)
   const arrayBuffer = buffer.buffer.slice(
