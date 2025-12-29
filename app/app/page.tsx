@@ -16,7 +16,12 @@ export default async function AppPage() {
     .single();
 
   const schoolName =
-    profile?.schools?.name || profile?.school_id || "Your school";
+  (Array.isArray(profile?.schools)
+    ? profile?.schools?.[0]?.name
+    : (profile as any)?.schools?.name) ||
+  (profile as any)?.school?.name ||
+  profile?.school_id ||
+  "Your school";
 
   return <DashboardClient schoolName={schoolName} />;
 }
