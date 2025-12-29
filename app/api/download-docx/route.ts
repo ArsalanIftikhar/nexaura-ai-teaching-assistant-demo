@@ -51,6 +51,8 @@ export const POST = async (request: Request) => {
       },
     ],
   });
+
+  const buffer = await Packer.toBuffer(doc);
   
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
