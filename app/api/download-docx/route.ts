@@ -54,13 +54,14 @@ export const POST = async (request: Request) => {
 
   const buffer = await Packer.toBuffer(doc);
   
-  const blob = new Blob([buffer], {
-    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  });
+  // Copy Buffer -> ArrayBuffer (guaranteed ArrayBuffer, not SharedArrayBuffer union)
+  const arrayBuffer = new ArrayBuffer(buffer.byteLength);
+  new Uint8Array(arrayBuffer).set(buffer);
   
-  return new Response(blob, {
+  return new Response(arrayBuffer, {
     status: 200,
     headers: {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "Content-Disposition": `attachment; filename="${filename}"`,
       "Cache-Control": "no-store",
     },
