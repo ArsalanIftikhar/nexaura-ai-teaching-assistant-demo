@@ -53,12 +53,16 @@ export const POST = async (request: Request) => {
 
   const buffer = await Packer.toBuffer(doc);
 
-  return new NextResponse(buffer, {
-    status: 200,
-    headers: {
-      "Content-Type":
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "Content-Disposition": `attachment; filename=${filename}`,
-    },
-  });
+// Convert Buffer -> Uint8Array view (no copy)
+const body = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+
+return new Response(body, {
+  status: 200,
+  headers: {
+    "Content-Type":
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "Content-Disposition": `attachment; filename="${filename}"`,
+    "Cache-Control": "no-store",
+  },
+});
 };
