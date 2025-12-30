@@ -7,6 +7,11 @@ interface UsageEvent {
   model: string;
   tokensEstimate?: number | null;
   costEstimateUsd?: number | null;
+  status: "success" | "fail" | "parse_fail" | "rate_limited";
+  repairUsed?: boolean;
+  topicLen?: number;
+  notesLen?: number;
+  studentTextLen?: number;
 }
 
 export const logUsageEvent = async ({
@@ -16,6 +21,11 @@ export const logUsageEvent = async ({
   model,
   tokensEstimate,
   costEstimateUsd,
+  status,
+  repairUsed,
+  topicLen,
+  notesLen,
+  studentTextLen,
 }: UsageEvent) => {
   const supabase = createSupabaseAdminClient();
 
@@ -26,5 +36,10 @@ export const logUsageEvent = async ({
     model,
     tokens_estimate: tokensEstimate ?? null,
     cost_estimate_usd: costEstimateUsd ?? null,
+    status,
+    repair_used: repairUsed ?? false,
+    topic_len: topicLen ?? null,
+    notes_len: notesLen ?? null,
+    student_text_len: studentTextLen ?? null,
   });
 };

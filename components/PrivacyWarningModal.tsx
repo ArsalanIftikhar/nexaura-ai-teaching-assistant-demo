@@ -20,8 +20,8 @@ export default function PrivacyWarningModal({
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lg">
         <h2 className="text-lg font-semibold text-slate-900">Personal data detected</h2>
         <p className="mt-2 text-sm text-slate-600">
-          We detected a possible email address or phone number. Please remove any student personal data. If you
-          still want to continue, confirm below.
+          We detected possible personal data (emails, phone numbers, or identifiers). Please remove any student
+          personal data. If you still want to continue, confirm below (demo only).
         </p>
         <div className="mt-6 flex justify-end gap-3">
           <button
@@ -34,7 +34,7 @@ export default function PrivacyWarningModal({
             onClick={onConfirm}
             className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
           >
-            I confirm
+            Proceed (demo only)
           </button>
         </div>
       </div>

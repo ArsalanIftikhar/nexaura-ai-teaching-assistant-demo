@@ -7,14 +7,26 @@ interface Section {
   content: string;
 }
 
+interface Citation {
+  source: string;
+  excerpt: string;
+}
+
 interface DownloadButtonProps {
   title: string;
   topic: string;
   mode: string;
   sections: Section[];
+  citations: Citation[];
 }
 
-export default function DownloadButton({ title, topic, mode, sections }: DownloadButtonProps) {
+export default function DownloadButton({
+  title,
+  topic,
+  mode,
+  sections,
+  citations,
+}: DownloadButtonProps) {
   const [loading, setLoading] = useState(false);
 
   const handleDownload = async () => {
@@ -25,7 +37,7 @@ export default function DownloadButton({ title, topic, mode, sections }: Downloa
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ title, topic, mode, sections }),
+        body: JSON.stringify({ title, topic, mode, sections, citations }),
       });
 
       if (!response.ok) {
@@ -38,7 +50,7 @@ export default function DownloadButton({ title, topic, mode, sections }: Downloa
       link.href = url;
       const disposition = response.headers.get("Content-Disposition") || "";
       const match = disposition.match(/filename=([^;]+)/i);
-      link.download = match ? match[1].replace(/\"/g, "") : "NexAura_Download.docx";
+      link.download = match ? match[1].replace(/"/g, "") : "NexAura_Download.docx";
       document.body.appendChild(link);
       link.click();
       link.remove();

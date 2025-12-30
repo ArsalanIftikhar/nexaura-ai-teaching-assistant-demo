@@ -15,9 +15,18 @@ interface OutputViewerProps {
   sections?: Section[];
   citations?: Citation[];
   error?: string | null;
+  formatWarning?: boolean;
+  message?: string | null;
 }
 
-export default function OutputViewer({ title, sections, citations, error }: OutputViewerProps) {
+export default function OutputViewer({
+  title,
+  sections,
+  citations,
+  error,
+  formatWarning,
+  message,
+}: OutputViewerProps) {
   if (error) {
     return (
       <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -36,6 +45,12 @@ export default function OutputViewer({ title, sections, citations, error }: Outp
 
   return (
     <div className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      {formatWarning || message ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          {message ||
+            "We couldn’t format the response into the required structure. We attempted an automatic repair. If this persists, simplify the topic or try again."}
+        </div>
+      ) : null}
       {title ? <h2 className="text-lg font-semibold text-slate-900">{title}</h2> : null}
       <div className="space-y-5">
         {sections.map((section, index) => (
@@ -48,10 +63,10 @@ export default function OutputViewer({ title, sections, citations, error }: Outp
         ))}
       </div>
       {citations && citations.length > 0 ? (
-        <div className="border-t border-slate-200 pt-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <details className="border-t border-slate-200 pt-4">
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-500">
             Curriculum citations
-          </h4>
+          </summary>
           <ul className="mt-2 space-y-2 text-xs text-slate-600">
             {citations.map((citation, index) => (
               <li key={`${citation.source}-${index}`}>
@@ -59,7 +74,7 @@ export default function OutputViewer({ title, sections, citations, error }: Outp
               </li>
             ))}
           </ul>
-        </div>
+        </details>
       ) : null}
     </div>
   );

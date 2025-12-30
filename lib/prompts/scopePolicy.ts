@@ -17,6 +17,7 @@ const feedbackCheatingPatterns = [
   "submit",
   "final answer",
   "cheat",
+  "answer to submit",
 ];
 
 export interface ScopeDecision {

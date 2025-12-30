@@ -19,7 +19,9 @@ export const GET = async (request: Request) => {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("usage_events")
-    .select("id, school_id, mode, created_at, latency_ms, model, tokens_estimate, cost_estimate_usd")
+    .select(
+      "id, school_id, mode, created_at, latency_ms, model, tokens_estimate, cost_estimate_usd, status, repair_used, topic_len, notes_len, student_text_len"
+    )
     .gte("created_at", sinceDate.toISOString())
     .order("created_at", { ascending: false });
 
@@ -36,6 +38,11 @@ export const GET = async (request: Request) => {
     "model",
     "tokens_estimate",
     "cost_estimate_usd",
+    "status",
+    "repair_used",
+    "topic_len",
+    "notes_len",
+    "student_text_len",
   ];
 
   const rows = data?.map((row) =>
