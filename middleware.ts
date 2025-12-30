@@ -55,5 +55,5 @@ export const middleware = async (request: NextRequest) => {
 };
 
 export const config = {
-  matcher: ["/app/:path*", "/api/generate", "/api/download-docx"],
+  matcher: ["/app/:path*", "/api/generate", "/api/download-docx", "/api/slides", "/api/export-pack"],
 };

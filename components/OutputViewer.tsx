@@ -16,6 +16,7 @@ interface OutputViewerProps {
   citations?: Citation[];
   error?: string | null;
   formatWarning?: boolean;
+  curriculumWarning?: boolean;
   message?: string | null;
 }
 
@@ -25,6 +26,7 @@ export default function OutputViewer({
   citations,
   error,
   formatWarning,
+  curriculumWarning,
   message,
 }: OutputViewerProps) {
   if (error) {
@@ -49,6 +51,11 @@ export default function OutputViewer({
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
           {message ||
             "We couldn’t format the response into the required structure. We attempted an automatic repair. If this persists, simplify the topic or try again."}
+        </div>
+      ) : null}
+      {curriculumWarning ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          Limited curriculum alignment: no close match found in the selected curriculum documents.
         </div>
       ) : null}
       {title ? <h2 className="text-lg font-semibold text-slate-900">{title}</h2> : null}
@@ -76,6 +83,7 @@ export default function OutputViewer({
           </ul>
         </details>
       ) : null}
+      <p className="text-xs text-slate-500">© NexAura. For school use only.</p>
     </div>
   );
 }

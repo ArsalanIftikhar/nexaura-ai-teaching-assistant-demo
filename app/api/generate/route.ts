@@ -27,18 +27,23 @@ const requestSchema = z.object({
   mode: z.enum(["lesson", "resource", "feedback"]),
   topic: z.string().min(2),
   notes: z.string().optional().default(""),
-  year_group: z.string().min(1),
-  lesson_type: z.string().min(1),
-  duration: z.string().min(1),
-  class_ability: z.string().min(1),
-  class_profile: z.string().min(1),
+  grade: z.string().optional().default(""),
+  year_group: z.string().optional().default(""),
+  lesson_type: z.string().optional().default(""),
+  duration: z.string().optional().default(""),
+  class_ability: z.string().optional().default(""),
+  class_profile: z.string().optional().default(""),
+  curriculum_key: z.string().optional().default("national_pk"),
   resource_type: z.string().optional().default(""),
+  number_questions: z.coerce.number().int().positive().optional(),
   assessment_type: z.string().optional().default(""),
   total_marks: z.string().optional().default(""),
   rubric: z.string().optional().default(""),
   teacher_guidance: z.string().optional().default(""),
   student_text: z.string().optional().default(""),
   refine_request: z.string().optional().default(""),
+  consistency_lock: z.boolean().optional().default(false),
+  topic_session_context: z.string().optional().default(""),
 });
 
 const promptByMode: Record<string, string> = {
@@ -92,6 +97,24 @@ const mergeCitations = (
   return Array.from(map.values());
 };
 
+const footerLine = "© NexAura. For school use only.";
+
+const applyFooter = (output: OutputPayload) => {
+  if (output.sections.length === 0) return output;
+  const updatedSections = output.sections.map((section, index) => {
+    if (index !== output.sections.length - 1) return section;
+    const content = section.content.trimEnd();
+    if (content.endsWith(footerLine)) {
+      return section;
+    }
+    return {
+      ...section,
+      content: `${content}\n\n${footerLine}`.trim(),
+    };
+  });
+  return { ...output, sections: updatedSections };
+};
+
 const logUsageSafely = async (payload: Parameters<typeof logUsageEvent>[0]) => {
   try {
     await logUsageEvent(payload);
@@ -137,18 +160,23 @@ export const POST = async (request: Request) => {
     mode,
     topic,
     notes,
+    grade,
     year_group,
     lesson_type,
     duration,
     class_ability,
     class_profile,
+    curriculum_key,
     resource_type,
+    number_questions,
     assessment_type,
     total_marks,
     rubric,
     teacher_guidance,
     student_text,
     refine_request,
+    consistency_lock,
+    topic_session_context,
   } = parsed.data;
 
   const { data: profile } = await supabase
@@ -241,8 +269,10 @@ export const POST = async (request: Request) => {
     }
   }
 
+  const gradeLabel = grade || year_group || "";
   const curriculumSnippets = retrieveCurriculumSnippets(
-    `${topic} ${notes} ${year_group} ${lesson_type}`
+    `${topic} ${notes} ${gradeLabel} ${lesson_type} ${resource_type}`,
+    curriculum_key || "national_pk"
   );
 
   const curriculumText = curriculumSnippets.length
@@ -250,29 +280,42 @@ export const POST = async (request: Request) => {
         .map((snippet, index) => `${index + 1}. (${snippet.source}) ${snippet.text}`)
         .join("\n")
     : "No relevant curriculum excerpts found.";
+  const limitedCurriculum = curriculumSnippets.length === 0;
 
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
   });
 
+  const contextLines = [
+    `- Topic: ${topic}`,
+    gradeLabel ? `- Grade: ${gradeLabel}` : null,
+    lesson_type ? `- Lesson type: ${lesson_type}` : null,
+    duration ? `- Duration: ${duration}` : null,
+    class_ability ? `- Class ability: ${class_ability}` : null,
+    class_profile ? `- Class profile: ${class_profile}` : null,
+    resource_type ? `- Resource type: ${resource_type}` : null,
+    typeof number_questions === "number"
+      ? `- Number of questions: ${number_questions}`
+      : null,
+    assessment_type ? `- Assessment type: ${assessment_type}` : null,
+    total_marks ? `- Total marks: ${total_marks}` : null,
+    rubric ? `- Rubric: ${rubric}` : null,
+    teacher_guidance ? `- Teacher guidance: ${teacher_guidance}` : null,
+    notes ? `- Notes: ${notes}${notesTruncated ? " (truncated)" : ""}` : null,
+    mode === "feedback"
+      ? `- Student response/work: ${student_text || "None"}${studentTextTruncated ? " (truncated)" : ""}`
+      : null,
+    topicTruncated ? "- Topic was truncated to fit limits." : null,
+    refine_request ? `- Refinement request: ${refine_request}` : null,
+    consistency_lock && topic_session_context
+      ? `- Topic session context (reuse objectives, vocabulary, misconceptions, checks): ${topic_session_context}`
+      : null,
+  ].filter(Boolean);
+
   const prompt = `${promptByMode[mode]}
 
 Context:
-- Topic: ${topic}
-- Year group: ${year_group}
-- Lesson type: ${lesson_type}
-- Duration: ${duration}
-- Class ability: ${class_ability}
-- Class profile: ${class_profile}
-- Resource type: ${resource_type || "N/A"}
-- Assessment type: ${assessment_type || "N/A"}
-- Total marks: ${total_marks || "N/A"}
-- Rubric: ${rubric || "None"}
-- Teacher guidance: ${teacher_guidance || "None"}
-- Notes: ${notes || "None"}${notesTruncated ? " (truncated)" : ""}
-${mode === "feedback" ? `- Student response/work: ${student_text || "None"}${studentTextTruncated ? " (truncated)" : ""}` : ""}
-${topicTruncated ? "- Topic was truncated to fit limits." : ""}
-${refine_request ? `- Refinement request: ${refine_request}` : ""}
+${contextLines.join("\n") || "- None"}
 
 Curriculum excerpts:
 ${curriculumText}
@@ -392,18 +435,22 @@ Output JSON only.`;
         {
           heading: "Output",
           content:
-            truncated ||
-            "We couldn’t format the response into the required structure. We attempted an automatic repair. If this persists, simplify the topic or try again.",
+            `${
+              truncated ||
+              "We couldn’t format the response into the required structure. We attempted an automatic repair. If this persists, simplify the topic or try again."
+            }\n\n${footerLine}`,
         },
       ],
       citations: retrievedCitations,
       formatWarning: true,
+      curriculumWarning: limitedCurriculum,
       message:
         "We couldn’t format the response into the required structure. We attempted an automatic repair. If this persists, simplify the topic or try again.",
     });
   }
 
   const mergedCitations = mergeCitations(finalOutput.citations ?? [], retrievedCitations);
+  const finalWithFooter = applyFooter({ ...finalOutput, citations: mergedCitations });
 
   if (schoolId) {
     await logUsageSafely({
@@ -422,10 +469,11 @@ Output JSON only.`;
   }
 
   return NextResponse.json({
-    title: finalOutput.title,
-    sections: finalOutput.sections,
-    citations: mergedCitations,
+    title: finalWithFooter.title,
+    sections: finalWithFooter.sections,
+    citations: finalWithFooter.citations,
     formatWarning: false,
     repairUsed,
+    curriculumWarning: limitedCurriculum,
   });
 };

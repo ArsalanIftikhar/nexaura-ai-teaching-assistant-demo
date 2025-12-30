@@ -11,7 +11,8 @@ export const GET = async (request: Request) => {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const curriculumLoaded = retrieveCurriculumSnippets("curriculum").length > 0;
+  const curriculumLoaded =
+    retrieveCurriculumSnippets("curriculum", "national_pk").length > 0;
 
   return NextResponse.json({
     ok: true,

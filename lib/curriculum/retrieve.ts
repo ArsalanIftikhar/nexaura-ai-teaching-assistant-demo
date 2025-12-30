@@ -6,24 +6,21 @@ export interface CurriculumSnippet {
   text: string;
 }
 
-const curriculumDir = path.join(process.cwd(), "data", "curriculum");
-const indexPath = path.join(curriculumDir, "index.json");
+const curriculumRoot = path.join(process.cwd(), "data", "curriculum");
 
-const loadDocuments = (): { source: string; content: string }[] => {
-  if (fs.existsSync(indexPath)) {
-    const raw = fs.readFileSync(indexPath, "utf-8");
-    return JSON.parse(raw);
+const loadDocuments = (curriculumKey: string) => {
+  const folderPath = path.join(curriculumRoot, curriculumKey);
+  if (!fs.existsSync(folderPath)) {
+    return [];
   }
 
   const files = fs
-    .readdirSync(curriculumDir)
+    .readdirSync(folderPath)
     .filter((file) => file.endsWith(".md"));
 
   return files.map((file) => ({
-    source: file.includes("placeholder")
-      ? "Placeholder Curriculum v0.1"
-      : file,
-    content: fs.readFileSync(path.join(curriculumDir, file), "utf-8"),
+    source: file,
+    content: fs.readFileSync(path.join(folderPath, file), "utf-8"),
   }));
 };
 
@@ -35,13 +32,16 @@ const scoreParagraph = (paragraph: string, keywords: string[]) => {
   }, 0);
 };
 
-export const retrieveCurriculumSnippets = (query: string): CurriculumSnippet[] => {
+export const retrieveCurriculumSnippets = (
+  query: string,
+  curriculumKey: string
+): CurriculumSnippet[] => {
   const keywords = query
     .toLowerCase()
     .split(/\W+/)
     .filter((term) => term.length > 2);
 
-  const documents = loadDocuments();
+  const documents = loadDocuments(curriculumKey);
   const scored: { source: string; text: string; score: number }[] = [];
 
   documents.forEach((doc) => {
@@ -62,6 +62,6 @@ export const retrieveCurriculumSnippets = (query: string): CurriculumSnippet[] =
   return scored
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
+    .slice(0, 4)
     .map((item) => ({ source: item.source, text: item.text }));
 };

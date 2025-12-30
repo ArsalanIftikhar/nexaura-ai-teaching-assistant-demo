@@ -23,7 +23,7 @@ export default async function AppPage() {
   const profile = data as ProfileWithSchool | null;
 
   const schoolName =
-    profile?.schools?.name || profile?.school_id || "Your school";
+    profile?.schools?.name || profile?.school_id || "School account";
 
   return <DashboardClient schoolName={schoolName} />;
 }

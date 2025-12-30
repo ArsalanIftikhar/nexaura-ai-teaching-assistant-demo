@@ -13,4 +13,11 @@ Use the following EXACT section headings and order:
 1) Student-Friendly Feedback
 2) Teacher Notes
 
-Include strengths, next steps, misconceptions detected, one improvement target, and an optional extension prompt. If total marks are provided, include an indicative mark with a disclaimer. Remind to remove names/personal data. If curriculum is missing, include the exact phrase: "Not found in provided curriculum documents" and proceed with safe assumptions. Output JSON only.`;
+Requirements:
+- Use Grade (not Year).
+- Include strengths, next steps, misconceptions detected, one improvement target, and an optional extension prompt.
+- If total marks are provided, include an indicative mark with a disclaimer.
+- Remind to remove names/personal data.
+- End the final section with: "© NexAura. For school use only."
+- If curriculum is missing, include the exact phrase: "Not found in provided curriculum documents" and proceed with safe assumptions.
+Output JSON only.`;

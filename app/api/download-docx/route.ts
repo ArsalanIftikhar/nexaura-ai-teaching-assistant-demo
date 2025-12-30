@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Document, Packer, Paragraph, TextRun } from "docx";
+import { Document, Footer, Packer, Paragraph, TextRun } from "docx";
 import { z } from "zod";
 
 const requestSchema = z.object({
@@ -92,6 +92,17 @@ export const POST = async (request: Request) => {
     sections: [
       {
         children: content,
+        footers: {
+          default: new Footer({
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: "© NexAura. For school use only.", size: 18 }),
+                ],
+              }),
+            ],
+          }),
+        },
       },
     ],
   });

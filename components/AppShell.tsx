@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 interface AppShellProps {
@@ -8,8 +8,20 @@ interface AppShellProps {
   children: ReactNode;
 }
 
+const SCHOOL_NAME_KEY = "nexaura_school_name";
+
 export default function AppShell({ schoolName, children }: AppShellProps) {
   const [loading, setLoading] = useState(false);
+  const [displayName, setDisplayName] = useState(schoolName);
+
+  useEffect(() => {
+    const stored = sessionStorage.getItem(SCHOOL_NAME_KEY);
+    if (stored) {
+      setDisplayName(stored);
+    } else if (schoolName) {
+      sessionStorage.setItem(SCHOOL_NAME_KEY, schoolName);
+    }
+  }, [schoolName]);
 
   const handleLogout = async () => {
     setLoading(true);
@@ -33,7 +45,9 @@ export default function AppShell({ schoolName, children }: AppShellProps) {
           <div className="flex items-center gap-4">
             <div className="text-right">
               <p className="text-xs text-slate-500">Signed in as</p>
-              <p className="text-sm font-semibold text-slate-900">{schoolName}</p>
+              <p className="text-sm font-semibold text-slate-900">
+                {displayName || "School account"}
+              </p>
             </div>
             <button
               onClick={handleLogout}
