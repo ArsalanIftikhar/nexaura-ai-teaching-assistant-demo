@@ -48,7 +48,10 @@ const requestSchema = z.object({
   notes: z.string().optional().default(""),
   grade: z.string().optional().default(""),
   year_group: z.string().optional().default(""),
-  lesson_type: z.enum(["New concept", "Revision & practice", "Exam prep"]).optional().default(""),
+  lesson_type: z
+    .enum(["New concept", "Revision & practice", "Exam prep"])
+    .optional()
+    .default("New concept"),
   duration: z.enum(["60", "90"]).optional().default("60"),
   class_ability: z.enum(["Low", "Medium", "High", "Mixed"]).optional().default("Mixed"),
   class_profile: z.string().optional().default(""),
