@@ -12,9 +12,10 @@ export const GET = async (request: Request) => {
   }
 
   const url = new URL(request.url);
-  const days = Number(url.searchParams.get("days") || "30");
+  const daysParam = Number(url.searchParams.get("days") || "30");
+  const days = Number.isFinite(daysParam) ? Math.min(Math.max(daysParam, 1), 365) : 30;
   const sinceDate = new Date();
-  sinceDate.setDate(sinceDate.getDate() - Math.min(days, 365));
+  sinceDate.setDate(sinceDate.getDate() - days);
 
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
