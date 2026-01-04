@@ -279,9 +279,17 @@ export const POST = async (request: Request) => {
     );
   }
 
-  const resourceCountRaw = resource_count ?? number_questions ?? null;
+  const resourceCountRaw = resource_count ?? number_questions;
   const resourceCount =
-    mode === "resource" ? (resourceCountRaw ?? NaN) : null;
+    mode === "resource" && resourceCountRaw !== undefined && resourceCountRaw !== null
+      ? Number(resourceCountRaw)
+      : null;
+  if (mode === "resource" && resourceCount === null) {
+    return NextResponse.json(
+      { error: "Resource count is required for resources." },
+      { status: 400 }
+    );
+  }
   if (
     mode === "resource" &&
     (!Number.isFinite(resourceCount) || !Number.isInteger(resourceCount) || resourceCount <= 0)
@@ -293,9 +301,9 @@ export const POST = async (request: Request) => {
   }
 
   let resourceCountClamped = resourceCount;
-  if (mode === "resource" && normalizedResourceType) {
+  if (mode === "resource" && normalizedResourceType && resourceCount !== null) {
     const range = RESOURCE_LIMITS[normalizedResourceType];
-    if (resourceCount! < range.min || resourceCount! > range.max) {
+    if (resourceCount < range.min || resourceCount > range.max) {
       return NextResponse.json(
         {
           error: `Resource count must be between ${range.min} and ${range.max} for ${normalizedResourceType.replace("_", " ")}.`,
@@ -303,7 +311,7 @@ export const POST = async (request: Request) => {
         { status: 400 }
       );
     }
-    resourceCountClamped = Math.min(Math.max(resourceCount!, range.min), range.max);
+    resourceCountClamped = Math.min(Math.max(resourceCount, range.min), range.max);
   }
 
   const combinedInput = [
