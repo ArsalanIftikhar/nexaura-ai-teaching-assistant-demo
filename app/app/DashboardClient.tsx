@@ -60,9 +60,8 @@ const gradeOptions = [
 
 const lessonTypeOptions = [
   { value: "New concept", label: "New concept" },
-  { value: "Revision", label: "Revision" },
+  { value: "Revision & practice", label: "Revision & practice" },
   { value: "Exam prep", label: "Exam prep" },
-  { value: "Deepen understanding", label: "Deepen understanding" },
 ];
 
 const durationOptions = [
@@ -79,12 +78,8 @@ const abilityOptions = [
 
 const resourceTypeOptions = [
   { value: "Worksheet", label: "Worksheet" },
-  { value: "Starter questions", label: "Starter questions" },
-  { value: "Exit ticket", label: "Exit ticket" },
-  { value: "Mini whiteboard questions", label: "Mini whiteboard questions" },
-  { value: "Quiz", label: "Quiz" },
   { value: "MCQ quiz", label: "MCQ quiz" },
-  { value: "Slides (content pack)", label: "Slides (content pack)" },
+  { value: "Slides content pack", label: "Slides content pack" },
 ];
 
 const assessmentTypeOptions = [
@@ -95,14 +90,28 @@ const assessmentTypeOptions = [
   { value: "Other", label: "Other" },
 ];
 
-const questionDefaults: Record<string, string> = {
-  Worksheet: "10",
-  "Starter questions": "4",
-  "Exit ticket": "1",
-  "Mini whiteboard questions": "6",
-  Quiz: "8",
-  "MCQ quiz": "10",
-  "Slides (content pack)": "10",
+const resourceCountConfig: Record<
+  string,
+  { min: number; max: number; defaultValue: string; label: string }
+> = {
+  Worksheet: {
+    min: 6,
+    max: 20,
+    defaultValue: "10",
+    label: "Number of questions",
+  },
+  "MCQ quiz": {
+    min: 6,
+    max: 15,
+    defaultValue: "10",
+    label: "Number of questions",
+  },
+  "Slides content pack": {
+    min: 8,
+    max: 18,
+    defaultValue: "12",
+    label: "Number of slides",
+  },
 };
 
 const summaryByTab: Record<TabKey, { title: string; bullets: string[] }> = {
@@ -117,7 +126,7 @@ const summaryByTab: Record<TabKey, { title: string; bullets: string[] }> = {
   resource: {
     title: "Resources",
     bullets: [
-      "Worksheet, quiz, MCQ, starter, exit ticket, mini whiteboard",
+      "Worksheet, MCQ quiz, slides content pack",
       "Slide content packs for manual slide creation",
       "Suggested external resources",
     ],
@@ -156,11 +165,11 @@ const previewByTab: Record<TabKey, OutputState> = {
     ],
   },
   resource: {
-    title: "Sample Resource: Starter questions",
+    title: "Sample Resource: Worksheet",
     sections: [
       {
         heading: "Teacher Instructions",
-        content: "Starter questions (4) based on prior learning; time-on-task <= 10 minutes.",
+        content: "Worksheet (10 questions) aligned to prior learning; time-on-task <= 20 minutes.",
       },
       {
         heading: "Student Sheet (printable)",
@@ -220,7 +229,6 @@ interface LessonInputs {
   curriculumKey: string;
   classProfile: string;
   notes: string;
-  differentiationPrefs: string;
 }
 
 interface ResourceInputs {
@@ -232,7 +240,6 @@ interface ResourceInputs {
   classAbility: string;
   priorLearning: string;
   notes: string;
-  difficultyMix: string;
 }
 
 interface FeedbackInputs {
@@ -255,7 +262,6 @@ const defaultLessonInputs: LessonInputs = {
   curriculumKey: "national_pk",
   classProfile: "2 EAL learners; 1 learner needing additional support; varying confidence",
   notes: "",
-  differentiationPrefs: "",
 };
 
 const defaultResourceInputs: ResourceInputs = {
@@ -267,7 +273,6 @@ const defaultResourceInputs: ResourceInputs = {
   classAbility: "Mixed",
   priorLearning: "Basic plant vs animal cells and organelles",
   notes: "",
-  difficultyMix: "",
 };
 
 const defaultFeedbackInputs: FeedbackInputs = {
@@ -378,7 +383,8 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
 
   useEffect(() => {
     if (activeTab === "resource") {
-      const nextDefault = questionDefaults[resourceInputs.resourceType] || "";
+      const nextDefault =
+        resourceCountConfig[resourceInputs.resourceType]?.defaultValue || "";
       if (resourceInputs.questionCount !== nextDefault) {
         setResourceInputs((prev) => ({ ...prev, questionCount: nextDefault }));
       }
@@ -390,13 +396,29 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
 
   const priorLearningRequired =
     activeTab === "lesson" ||
-    (activeTab === "resource" && resourceInputs.resourceType === "Starter questions");
+    (activeTab === "resource" && resourceInputs.resourceType === "Slides content pack");
+
+  const countConfig = resourceCountConfig[resourceInputs.resourceType] ?? {
+    min: 1,
+    max: 20,
+    defaultValue: "10",
+    label: "Number of questions",
+  };
 
   const questionCountValue = resourceInputs.questionCount.trim();
   const questionCountNumber = Number(questionCountValue);
   const questionCountValid =
     activeTab !== "resource" ||
-    (questionCountValue.length > 0 && Number.isFinite(questionCountNumber) && questionCountNumber > 0);
+    (questionCountValue.length > 0 &&
+      Number.isFinite(questionCountNumber) &&
+      Number.isInteger(questionCountNumber) &&
+      questionCountNumber >= countConfig.min &&
+      questionCountNumber <= countConfig.max);
+
+  const questionCountError =
+    activeTab === "resource" && !questionCountValid
+      ? `Enter a whole number between ${countConfig.min} and ${countConfig.max}.`
+      : "";
 
   const canGenerate = useMemo(() => {
     if (activeTab === "lesson") {
@@ -489,7 +511,6 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
               number_questions: questionCountNumber,
               prior_learning: resourceInputs.priorLearning,
               notes: resourceInputs.notes,
-              difficulty_mix: resourceInputs.difficultyMix,
             }
           : {
               mode: "feedback",
@@ -664,14 +685,10 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                 />
                 <TextField
                   id="question-count"
-                  label={
-                    resourceInputs.resourceType === "Slides (content pack)"
-                      ? "Number of slides"
-                      : "Number of questions"
-                  }
+                  label={countConfig.label}
                   value={resourceInputs.questionCount}
                   onChange={(value) => setResourceInputs((prev) => ({ ...prev, questionCount: value }))}
-                  placeholder={questionDefaults[resourceInputs.resourceType]}
+                  placeholder={countConfig.defaultValue}
                 />
                 <SelectField
                   id="class-ability"
@@ -680,21 +697,17 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                   options={abilityOptions}
                   onChange={(value) => setResourceInputs((prev) => ({ ...prev, classAbility: value }))}
                 />
-                <TextField
-                  id="prior-learning"
-                  label={
-                    resourceInputs.resourceType === "Starter questions"
-                      ? "Prior learning / previous lesson (required)"
-                      : "Prior learning / previous lesson (optional)"
-                  }
-                  value={resourceInputs.priorLearning}
-                  onChange={(value) => setResourceInputs((prev) => ({ ...prev, priorLearning: value }))}
-                  placeholder="Key ideas from the previous lesson"
-                />
-                {!questionCountValid ? (
-                  <p className="text-xs text-red-600">
-                    Enter a valid number greater than 0.
-                  </p>
+                {resourceInputs.resourceType === "Slides content pack" ? (
+                  <TextField
+                    id="prior-learning"
+                    label="Prior learning / previous lesson (required)"
+                    value={resourceInputs.priorLearning}
+                    onChange={(value) => setResourceInputs((prev) => ({ ...prev, priorLearning: value }))}
+                    placeholder="Key ideas from the previous lesson"
+                  />
+                ) : null}
+                {questionCountError ? (
+                  <p className="text-xs text-red-600">{questionCountError}</p>
                 ) : null}
               </div>
             ) : null}
@@ -760,26 +773,6 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                     onChange={(value) => setLessonInputs((prev) => ({ ...prev, notes: value }))}
                     rows={3}
                   />
-                  <TextAreaField
-                    id="diff-prefs"
-                    label="Differentiation preferences (optional)"
-                    value={lessonInputs.differentiationPrefs}
-                    onChange={(value) => setLessonInputs((prev) => ({ ...prev, differentiationPrefs: value }))}
-                    rows={2}
-                  />
-                  <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <h4 className="text-xs font-semibold text-slate-700">
-                      Plan from textbook photo/scan (Coming soon)
-                    </h4>
-                    <p className="mt-1 text-xs text-slate-500">
-                      You will be able to upload a textbook image to base the lesson on.
-                    </p>
-                    <input
-                      type="file"
-                      disabled
-                      className="mt-2 w-full rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500"
-                    />
-                  </div>
                 </div>
               </details>
             ) : null}
@@ -797,26 +790,6 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                     onChange={(value) => setResourceInputs((prev) => ({ ...prev, notes: value }))}
                     rows={3}
                   />
-                  <TextField
-                    id="difficulty-mix"
-                    label="Difficulty mix preview (optional)"
-                    value={resourceInputs.difficultyMix}
-                    onChange={(value) => setResourceInputs((prev) => ({ ...prev, difficultyMix: value }))}
-                    placeholder="e.g. 50/35/15 or specific guidance"
-                  />
-                  <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <h4 className="text-xs font-semibold text-slate-700">
-                      Plan from textbook photo/scan (Coming soon)
-                    </h4>
-                    <p className="mt-1 text-xs text-slate-500">
-                      You will be able to upload a textbook image to generate resources.
-                    </p>
-                    <input
-                      type="file"
-                      disabled
-                      className="mt-2 w-full rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500"
-                    />
-                  </div>
                 </div>
               </details>
             ) : null}
@@ -840,19 +813,6 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                     onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, rubric: value }))}
                     rows={3}
                   />
-                  <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <h4 className="text-xs font-semibold text-slate-700">
-                      Feedback (Upload) — Coming soon
-                    </h4>
-                    <p className="mt-1 text-xs text-slate-500">
-                      File uploads will be available in a future update. Use the text box above for now.
-                    </p>
-                    <input
-                      type="file"
-                      disabled
-                      className="mt-2 w-full rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500"
-                    />
-                  </div>
                 </div>
               </details>
             ) : null}
