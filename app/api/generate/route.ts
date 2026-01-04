@@ -284,34 +284,34 @@ export const POST = async (request: Request) => {
     mode === "resource" && resourceCountRaw !== undefined && resourceCountRaw !== null
       ? Number(resourceCountRaw)
       : null;
-  if (mode === "resource" && resourceCount === null) {
-    return NextResponse.json(
-      { error: "Resource count is required for resources." },
-      { status: 400 }
-    );
-  }
-  if (
-    mode === "resource" &&
-    (!Number.isFinite(resourceCount) || !Number.isInteger(resourceCount) || resourceCount <= 0)
-  ) {
-    return NextResponse.json(
-      { error: "Resource count must be a positive whole number." },
-      { status: 400 }
-    );
-  }
-
   let resourceCountClamped = resourceCount;
-  if (mode === "resource" && normalizedResourceType && resourceCount !== null) {
-    const range = RESOURCE_LIMITS[normalizedResourceType];
-    if (resourceCount < range.min || resourceCount > range.max) {
+
+  if (mode === "resource") {
+    if (resourceCount === null) {
       return NextResponse.json(
-        {
-          error: `Resource count must be between ${range.min} and ${range.max} for ${normalizedResourceType.replace("_", " ")}.`,
-        },
+        { error: "Resource count is required for resources." },
         { status: 400 }
       );
     }
-    resourceCountClamped = Math.min(Math.max(resourceCount, range.min), range.max);
+    const count = resourceCount;
+    if (!Number.isFinite(count) || !Number.isInteger(count) || count <= 0) {
+      return NextResponse.json(
+        { error: "Resource count must be a positive whole number." },
+        { status: 400 }
+      );
+    }
+    if (normalizedResourceType) {
+      const range = RESOURCE_LIMITS[normalizedResourceType];
+      if (count < range.min || count > range.max) {
+        return NextResponse.json(
+          {
+            error: `Resource count must be between ${range.min} and ${range.max} for ${normalizedResourceType.replace("_", " ")}.`,
+          },
+          { status: 400 }
+        );
+      }
+      resourceCountClamped = Math.min(Math.max(count, range.min), range.max);
+    }
   }
 
   const combinedInput = [
