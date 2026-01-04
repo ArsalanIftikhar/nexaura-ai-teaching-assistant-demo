@@ -125,7 +125,7 @@ const mergeCitations = (primary: Citation[], secondary: Citation[]) => {
 
 const footerLine = "© NexAura. For school use only.";
 
-const applyFooter = (output: { sections: { content: string }[] }) => {
+const applyFooter = (output: z.infer<typeof GenericOutputSchema>) => {
   if (output.sections.length === 0) return output;
   const updatedSections = output.sections.map((section, index) => {
     if (index !== output.sections.length - 1) return section;
