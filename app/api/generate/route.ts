@@ -98,13 +98,17 @@ const extractJson = (value: string) => {
   return cleaned.slice(start, end + 1);
 };
 
-const parseOutput = <T>(schema: z.ZodType<T>, value: string) => {
+const parseOutput = <T extends z.ZodTypeAny>(
+  schema: T,
+  value: string
+): z.infer<T> | null => {
   const extracted = extractJson(value) ?? value;
   try {
     const parsed = JSON.parse(extracted);
-    return schema.safeParse(parsed);
+    const result = schema.safeParse(parsed);
+    return result.success ? result.data : null;
   } catch {
-    return schema.safeParse(null);
+    return null;
   }
 };
 
@@ -543,8 +547,8 @@ Output JSON only.`;
   let finalOutput: ResourceOutput | z.infer<typeof GenericOutputSchema> | null = null;
   let repairUsed = false;
 
-  if (primaryParse.success) {
-    finalOutput = primaryParse.data;
+  if (primaryParse) {
+    finalOutput = primaryParse;
   } else {
     const extracted = extractJson(content) ?? content;
     const schemaText =
@@ -572,8 +576,8 @@ Output JSON only.`;
 
       const repairedContent = repair.choices[0]?.message?.content || "";
       const repairParse = parseOutput(schema, repairedContent);
-      if (repairParse.success) {
-        finalOutput = repairParse.data;
+      if (repairParse) {
+        finalOutput = repairParse;
         repairUsed = true;
       }
     } catch (error) {
