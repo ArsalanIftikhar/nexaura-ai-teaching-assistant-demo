@@ -137,85 +137,6 @@ const summaryByTab: Record<TabKey, { title: string; bullets: string[] }> = {
   },
 };
 
-const previewByTab: Record<TabKey, OutputState> = {
-  lesson: {
-    title: "Sample Lesson Plan: Cells and Specialised Cells",
-    sections: [
-      {
-        heading: "Overview",
-        content:
-          "Grade 8 science lesson focused on cell structure and specialised cells. UK PGCE-style lesson structure (adapted for Pakistan schools).",
-      },
-      {
-        heading: "Prior Knowledge & Diagnostic",
-        content:
-          "Starter questions based on prior learning about plant vs animal cells and basic organelles.",
-      },
-      {
-        heading: "Lesson Sequence (Starter / Main input / Guided practice / Independent practice / Wrap-up)",
-        content: "Starter 10, Main input 15, Guided practice 15, Independent practice 15, Wrap-up 5.",
-      },
-    ],
-    citations: [
-      {
-        source: "grade8_science.md",
-        excerpt:
-          "Identify nucleus, cytoplasm, cell membrane, mitochondria, chloroplasts, and vacuole.",
-      },
-    ],
-  },
-  resource: {
-    title: "Sample Resource: Worksheet",
-    sections: [
-      {
-        heading: "Teacher Instructions",
-        content: "Worksheet (10 questions) aligned to prior learning; time-on-task <= 20 minutes.",
-      },
-      {
-        heading: "Student Sheet (printable)",
-        content: "1) Name three organelles.\n2) Explain the job of the nucleus.",
-      },
-      {
-        heading: "Answers / Marking Guidance (teacher-only)",
-        content: "Concise model answers with misconceptions noted.",
-      },
-      {
-        heading: "Differentiation (support + extend)",
-        content: "Support with word bank; extend with specialised cell examples.",
-      },
-    ],
-    citations: [
-      {
-        source: "grade8_science.md",
-        excerpt:
-          "Compare specialized cells (red blood cell, root hair cell, palisade cell).",
-      },
-    ],
-  },
-  feedback: {
-    title: "Sample Feedback: Diffusion Explanation",
-    sections: [
-      {
-        heading: "Student-Friendly Feedback",
-        content:
-          "Strengths: Clear definition of diffusion. Next steps: Explain how surface area affects gas exchange.",
-      },
-      {
-        heading: "Teacher Notes",
-        content:
-          "Misconception: Confuses breathing with respiration. Plan a quick recap using a diagram.",
-      },
-    ],
-    citations: [
-      {
-        source: "grade8_science.md",
-        excerpt:
-          "Explain diffusion in alveoli and the role of surface area and blood supply.",
-      },
-    ],
-  },
-};
-
 const storageKeyForInputs = (tab: TabKey) => `nexaura_inputs_${tab}`;
 const storageKeyForOutput = (tab: TabKey) => `nexaura_output_${tab}`;
 
@@ -755,26 +676,42 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
             ) : null}
 
             {activeTab === "lesson" ? (
-              <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <summary className="cursor-pointer text-sm font-semibold text-slate-700">
-                  Advanced options
-                </summary>
-                <div className="mt-3 space-y-3">
-                  <TextField
-                    id="class-profile"
-                    label="Class profile"
-                    value={lessonInputs.classProfile}
-                    onChange={(value) => setLessonInputs((prev) => ({ ...prev, classProfile: value }))}
-                  />
-                  <TextAreaField
-                    id="notes"
-                    label="Notes / context"
-                    value={lessonInputs.notes}
-                    onChange={(value) => setLessonInputs((prev) => ({ ...prev, notes: value }))}
-                    rows={3}
+              <>
+                <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-700">
+                    Advanced options
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <TextField
+                      id="class-profile"
+                      label="Class profile"
+                      value={lessonInputs.classProfile}
+                      onChange={(value) => setLessonInputs((prev) => ({ ...prev, classProfile: value }))}
+                    />
+                    <TextAreaField
+                      id="notes"
+                      label="Notes / context"
+                      value={lessonInputs.notes}
+                      onChange={(value) => setLessonInputs((prev) => ({ ...prev, notes: value }))}
+                      rows={3}
+                    />
+                  </div>
+                </details>
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <h4 className="text-sm font-semibold text-slate-800">
+                    Plan from textbook photo/scan (Coming soon)
+                  </h4>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Coming soon: upload a photo/scan of a textbook page and generate a lesson based on it.
+                  </p>
+                  <input
+                    type="file"
+                    disabled
+                    accept="image/*,.pdf"
+                    className="mt-3 w-full rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500"
                   />
                 </div>
-              </details>
+              </>
             ) : null}
 
             {activeTab === "resource" ? (
@@ -795,26 +732,42 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
             ) : null}
 
             {activeTab === "feedback" ? (
-              <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <summary className="cursor-pointer text-sm font-semibold text-slate-700">
-                  Advanced options
-                </summary>
-                <div className="mt-3 space-y-3">
-                  <TextField
-                    id="total-marks"
-                    label="Total marks (optional)"
-                    value={feedbackInputs.totalMarks}
-                    onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, totalMarks: value }))}
-                  />
-                  <TextAreaField
-                    id="rubric"
-                    label="Rubric / mark scheme (optional)"
-                    value={feedbackInputs.rubric}
-                    onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, rubric: value }))}
-                    rows={3}
+              <>
+                <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-700">
+                    Advanced options
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <TextField
+                      id="total-marks"
+                      label="Total marks (optional)"
+                      value={feedbackInputs.totalMarks}
+                      onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, totalMarks: value }))}
+                    />
+                    <TextAreaField
+                      id="rubric"
+                      label="Rubric / mark scheme (optional)"
+                      value={feedbackInputs.rubric}
+                      onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, rubric: value }))}
+                      rows={3}
+                    />
+                  </div>
+                </details>
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <h4 className="text-sm font-semibold text-slate-800">
+                    Feedback (Upload) — Coming soon
+                  </h4>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Coming soon: upload a photo/scan of student work for feedback. For now, paste the question and student response.
+                  </p>
+                  <input
+                    type="file"
+                    disabled
+                    accept="image/*,.pdf"
+                    className="mt-3 w-full rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500"
                   />
                 </div>
-              </details>
+              </>
             ) : null}
 
             {loading ? (
@@ -869,12 +822,7 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                 message={currentOutput.message}
               />
             ) : (
-              <OutputViewer
-                title={previewByTab[activeTab].title}
-                sections={previewByTab[activeTab].sections}
-                citations={previewByTab[activeTab].citations}
-                error={error}
-              />
+              <OutputViewer error={error} />
             )}
 
             {activeTab === "resource" && currentOutput ? (
