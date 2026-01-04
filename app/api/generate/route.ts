@@ -28,7 +28,7 @@ const LIMITS = {
   studentText: 6000,
 };
 
-const MAX_TOKENS = {
+const MAX_TOKENS: Record<"lesson" | "feedback" | ResourceKind, number> = {
   lesson: 1400,
   feedback: 900,
   worksheet: 900,
@@ -284,7 +284,7 @@ export const POST = async (request: Request) => {
     mode === "resource" && resourceCountRaw !== undefined && resourceCountRaw !== null
       ? Number(resourceCountRaw)
       : null;
-  let resourceCountClamped = resourceCount;
+  let resourceCountClamped: number | null = resourceCount;
 
   if (mode === "resource") {
     if (resourceCount === null) {
@@ -445,7 +445,7 @@ export const POST = async (request: Request) => {
     class_profile ? `- Class profile: ${class_profile}` : null,
     prior_learning ? `- Prior learning / previous lesson: ${prior_learning}` : null,
     normalizedResourceType ? `- Resource type: ${normalizedResourceType}` : null,
-    Number.isFinite(resourceCountClamped)
+    typeof resourceCountClamped === "number" && Number.isFinite(resourceCountClamped)
       ? `- Resource count: ${resourceCountClamped}`
       : null,
     assessment_type ? `- Assessment type: ${assessment_type}` : null,
@@ -480,6 +480,13 @@ ${curriculumText}
 
 Output JSON only.`;
 
+  const resolveMaxTokens = () => {
+    if (mode === "resource" && normalizedResourceType) {
+      return MAX_TOKENS[normalizedResourceType];
+    }
+    return MAX_TOKENS[mode];
+  };
+
   let response: OpenAI.Chat.Completions.ChatCompletion | null = null;
   try {
     response = await openai.chat.completions.create({
@@ -489,10 +496,7 @@ Output JSON only.`;
         { role: "user", content: prompt },
       ],
       temperature: 0.2,
-      max_tokens:
-        mode === "resource" && normalizedResourceType
-          ? MAX_TOKENS[normalizedResourceType]
-          : MAX_TOKENS[mode],
+      max_tokens: resolveMaxTokens(),
       response_format: { type: "json_object" },
     });
   } catch (error) {
