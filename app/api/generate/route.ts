@@ -482,8 +482,9 @@ ${curriculumText}
 Output JSON only.`;
 
   const resolveMaxTokens = () => {
-    if (mode === "resource" && normalizedResourceType) {
-      return MAX_TOKENS[normalizedResourceType];
+    if (mode === "resource") {
+      const kind: ResourceKind = normalizedResourceType ?? "worksheet";
+      return MAX_TOKENS[kind];
     }
     const nonResourceMode: NonResourceMode = mode;
     return MAX_TOKENS[nonResourceMode];
