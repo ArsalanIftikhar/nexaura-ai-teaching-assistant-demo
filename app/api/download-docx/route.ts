@@ -1,38 +1,31 @@
 import { NextResponse } from "next/server";
 import { Document, Footer, Packer, Paragraph, TextRun } from "docx";
 import { z } from "zod";
+import { CitationSchema, ResourceOutputSchema } from "@/lib/validators/output";
 
-const requestSchema = z.object({
+const baseSchema = z.object({
   title: z.string().min(1),
   topic: z.string().min(1),
-  mode: z.string().min(1),
+  mode: z.enum(["lesson", "resource", "feedback"]),
+  citations: z.array(CitationSchema).optional().default([]),
+});
+
+const lessonFeedbackSchema = baseSchema.extend({
+  mode: z.enum(["lesson", "feedback"]),
   sections: z.array(
     z.object({
       heading: z.string().min(1),
       content: z.string().min(1),
     })
   ),
-  slides: z
-    .array(
-      z.object({
-        title: z.string().min(1),
-        bullets: z.array(z.string().min(1)).min(1),
-        speakerNotes: z.string().min(1),
-        suggestedVisual: z.string().optional(),
-        checkForUnderstanding: z.string().optional(),
-      })
-    )
-    .optional(),
-  citations: z
-    .array(
-      z.object({
-        source: z.string().min(1),
-        excerpt: z.string().min(1),
-      })
-    )
-    .optional()
-    .default([]),
 });
+
+const resourceSchema = baseSchema.extend({
+  mode: z.literal("resource"),
+  resource: ResourceOutputSchema,
+});
+
+const requestSchema = z.union([lessonFeedbackSchema, resourceSchema]);
 
 const sanitizeFilename = (value: string) =>
   value.replace(/[^a-z0-9-_]+/gi, "_").slice(0, 50);
@@ -59,7 +52,7 @@ export const POST = async (request: Request) => {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  const { title, topic, mode, sections, citations, slides } = parsed.data;
+  const { title, topic, mode, citations } = parsed.data;
   const date = new Date().toISOString().slice(0, 10);
   const filename = `NexAura_${sanitizeFilename(mode)}_${sanitizeFilename(
     topic
@@ -71,56 +64,154 @@ export const POST = async (request: Request) => {
     }),
   ];
 
-  sections.forEach((section) => {
-    content.push(
-      new Paragraph({
-        children: [new TextRun({ text: section.heading, bold: true, size: 24 })],
-        spacing: { before: 240, after: 120 },
-      }),
-      ...buildParagraphs(section.content)
-    );
-  });
-
-  if (slides && slides.length > 0) {
-    content.push(
-      new Paragraph({
-        children: [new TextRun({ text: "Slides content pack", bold: true, size: 24 })],
-        spacing: { before: 360, after: 120 },
-      })
-    );
-
-    slides.forEach((slide, index) => {
+  if (mode === "resource") {
+    const resource = parsed.data.resource;
+    if (resource.resource_kind === "worksheet") {
       content.push(
         new Paragraph({
-          children: [
-            new TextRun({ text: `Slide ${index + 1}: ${slide.title}`, bold: true }),
-          ],
+          children: [new TextRun({ text: "Teacher Instructions", bold: true, size: 24 })],
+          spacing: { before: 240, after: 120 },
+        }),
+        ...buildParagraphs(resource.teacher_instructions),
+        new Paragraph({
+          children: [new TextRun({ text: "Questions", bold: true, size: 24 })],
           spacing: { before: 240, after: 120 },
         })
       );
-      slide.bullets.forEach((bullet) => {
+      resource.questions.forEach((question) => {
         content.push(
           new Paragraph({
-            text: bullet,
-            bullet: { level: 0 },
+            text: `${question.number}. ${question.prompt}${
+              question.marks ? ` (${question.marks} marks)` : ""
+            }`,
           })
         );
       });
-      if (slide.checkForUnderstanding) {
+      content.push(
+        new Paragraph({
+          children: [new TextRun({ text: "Answers", bold: true, size: 24 })],
+          spacing: { before: 240, after: 120 },
+        })
+      );
+      resource.answers.forEach((answer) => {
+        content.push(new Paragraph({ text: `${answer.number}. ${answer.answer}` }));
+      });
+    }
+
+    if (resource.resource_kind === "mcq") {
+      content.push(
+        new Paragraph({
+          children: [new TextRun({ text: "Teacher Instructions", bold: true, size: 24 })],
+          spacing: { before: 240, after: 120 },
+        }),
+        ...buildParagraphs(resource.teacher_instructions),
+        new Paragraph({
+          children: [new TextRun({ text: "MCQs", bold: true, size: 24 })],
+          spacing: { before: 240, after: 120 },
+        })
+      );
+      resource.questions.forEach((question) => {
+        content.push(new Paragraph({ text: `${question.number}. ${question.stem}` }));
+        question.options.forEach((option, index) => {
+          const label = String.fromCharCode(65 + index);
+          content.push(new Paragraph({ text: `${label}. ${option}` }));
+        });
+      });
+      content.push(
+        new Paragraph({
+          children: [new TextRun({ text: "Answer Key", bold: true, size: 24 })],
+          spacing: { before: 240, after: 120 },
+        })
+      );
+      resource.answer_key.forEach((entry) => {
+        content.push(new Paragraph({ text: `${entry.number}. ${entry.correct_option}` }));
+      });
+    }
+
+    if (resource.resource_kind === "slides_pack") {
+      content.push(
+        new Paragraph({
+          children: [new TextRun({ text: "Slides content pack", bold: true, size: 24 })],
+          spacing: { before: 360, after: 120 },
+        })
+      );
+      resource.slides.forEach((slide) => {
         content.push(
           new Paragraph({
-            text: `Check for understanding: ${slide.checkForUnderstanding}`,
+            children: [
+              new TextRun({
+                text: `Slide ${slide.slide_number}: ${slide.title}`,
+                bold: true,
+              }),
+            ],
+            spacing: { before: 240, after: 120 },
           })
         );
-      }
-      if (slide.suggestedVisual) {
+        slide.bullets.forEach((bullet) => {
+          content.push(
+            new Paragraph({
+              text: bullet,
+              bullet: { level: 0 },
+            })
+          );
+        });
+        if (slide.check_for_understanding) {
+          content.push(
+            new Paragraph({
+              text: `Check for understanding: ${slide.check_for_understanding}`,
+            })
+          );
+        }
+        if (slide.suggested_visual) {
+          content.push(
+            new Paragraph({
+              text: `Suggested visual: ${slide.suggested_visual}`,
+            })
+          );
+        }
+        content.push(new Paragraph({ text: `Speaker notes: ${slide.speaker_notes}` }));
+      });
+
+      content.push(
+        new Paragraph({
+          children: [new TextRun({ text: "Teacher appendix", bold: true, size: 24 })],
+          spacing: { before: 360, after: 120 },
+        })
+      );
+      content.push(new Paragraph({ text: "Starter questions:" }));
+      resource.teacher_appendix.starter_questions.forEach((item, index) => {
+        content.push(new Paragraph({ text: `${index + 1}. ${item.q} — ${item.answer}` }));
+      });
+      content.push(new Paragraph({ text: "Mini whiteboard checks:" }));
+      resource.teacher_appendix.mini_whiteboard_checks.forEach((item, index) => {
         content.push(
           new Paragraph({
-            text: `Suggested visual: ${slide.suggestedVisual}`,
+            text: `${index + 1}. ${item.q} — ${item.expected}${
+              item.common_wrong ? ` (Common wrong: ${item.common_wrong})` : ""
+            }`,
           })
         );
-      }
-      content.push(new Paragraph({ text: `Speaker notes: ${slide.speakerNotes}` }));
+      });
+      content.push(
+        new Paragraph({
+          text: `Exit ticket: ${resource.teacher_appendix.exit_ticket.q}${
+            resource.teacher_appendix.exit_ticket.answer
+              ? ` — ${resource.teacher_appendix.exit_ticket.answer}`
+              : ""
+          }`,
+        })
+      );
+    }
+  } else {
+    const { sections } = parsed.data;
+    sections.forEach((section) => {
+      content.push(
+        new Paragraph({
+          children: [new TextRun({ text: section.heading, bold: true, size: 24 })],
+          spacing: { before: 240, after: 120 },
+        }),
+        ...buildParagraphs(section.content)
+      );
     });
   }
 

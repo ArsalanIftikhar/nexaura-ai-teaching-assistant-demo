@@ -12,42 +12,67 @@ interface Citation {
   excerpt: string;
 }
 
-interface SlideContent {
-  title: string;
-  bullets: string[];
-  speakerNotes: string;
-  suggestedVisual?: string;
-  checkForUnderstanding?: string;
-}
-
 interface DownloadButtonProps {
   title: string;
   topic: string;
-  mode: string;
-  sections: Section[];
+  mode: "lesson" | "resource" | "feedback";
+  sections?: Section[];
   citations: Citation[];
-  slides?: SlideContent[];
+  resource?: {
+    resource_kind: "worksheet" | "mcq" | "slides_pack";
+    title: string;
+    teacher_instructions?: string;
+    questions?: Array<{
+      number: number;
+      prompt?: string;
+      stem?: string;
+      options?: [string, string, string, string];
+      correct_index?: number;
+      misconception_map?: [string, string, string, string];
+      marks?: number;
+    }>;
+    answers?: Array<{ number: number; answer: string }>;
+    answer_key?: Array<{ number: number; correct_option: "A" | "B" | "C" | "D" }>;
+    slides?: Array<{
+      slide_number: number;
+      title: string;
+      bullets: string[];
+      speaker_notes: string;
+      suggested_visual?: string;
+      check_for_understanding?: string;
+    }>;
+    teacher_appendix?: {
+      starter_questions: Array<{ q: string; answer: string }>;
+      mini_whiteboard_checks: Array<{ q: string; expected: string; common_wrong?: string }>;
+      exit_ticket: { q: string; answer?: string };
+    };
+  };
 }
 
 export default function DownloadButton({
   title,
   topic,
   mode,
-  sections,
   citations,
-  slides,
+  sections,
+  resource,
 }: DownloadButtonProps) {
   const [loading, setLoading] = useState(false);
 
   const handleDownload = async () => {
     setLoading(true);
     try {
+      const body =
+        mode === "resource"
+          ? { title, topic, mode, citations, resource }
+          : { title, topic, mode, sections, citations };
+
       const response = await fetch("/api/download-docx", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ title, topic, mode, sections, citations, slides }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {

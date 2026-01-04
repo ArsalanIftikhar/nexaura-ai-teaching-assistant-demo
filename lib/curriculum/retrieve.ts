@@ -65,3 +65,15 @@ export const retrieveCurriculumSnippets = (
     .slice(0, 4)
     .map((item) => ({ source: item.source, text: item.text }));
 };
+
+export const retrieveCurriculumBundles = (
+  mainQuery: string,
+  starterQuery: string | null,
+  curriculumKey: string
+) => {
+  const mainSnippets = retrieveCurriculumSnippets(mainQuery, curriculumKey);
+  const starterSnippets = starterQuery
+    ? retrieveCurriculumSnippets(starterQuery, curriculumKey)
+    : [];
+  return { mainSnippets, starterSnippets };
+};

@@ -2,14 +2,25 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import OpenAI from "openai";
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
-import { retrieveCurriculumSnippets } from "@/lib/curriculum/retrieve";
+import { retrieveCurriculumBundles } from "@/lib/curriculum/retrieve";
 import { systemPrompt } from "@/lib/prompts/system";
 import { lessonPlannerPrompt } from "@/lib/prompts/lessonPlanner";
-import { resourceGeneratorPrompt } from "@/lib/prompts/resourceGenerator";
+import {
+  mcqPrompt,
+  slidesPackPrompt,
+  worksheetPrompt,
+} from "@/lib/prompts/resourceGenerator";
 import { feedbackPrompt } from "@/lib/prompts/feedback";
 import { evaluateScope } from "@/lib/prompts/scopePolicy";
 import { logUsageEvent } from "@/lib/usage/logUsage";
-import { OutputSchema, type OutputPayload } from "@/lib/validators/output";
+import {
+  type Citation,
+  GenericOutputSchema,
+  McqResourceSchema,
+  SlidesPackResourceSchema,
+  WorksheetResourceSchema,
+  type ResourceOutput,
+} from "@/lib/validators/output";
 
 const LIMITS = {
   topic: 200,
@@ -17,10 +28,18 @@ const LIMITS = {
   studentText: 6000,
 };
 
-const MAX_TOKENS: Record<string, number> = {
+const MAX_TOKENS = {
   lesson: 1400,
-  resource: 1200,
   feedback: 900,
+  worksheet: 900,
+  mcq: 900,
+  slides_pack: 1300,
+};
+
+const RESOURCE_LIMITS = {
+  worksheet: { min: 6, max: 20 },
+  mcq: { min: 6, max: 15 },
+  slides_pack: { min: 8, max: 18 },
 };
 
 const requestSchema = z.object({
@@ -28,15 +47,16 @@ const requestSchema = z.object({
   topic: z.string().optional().default(""),
   notes: z.string().optional().default(""),
   grade: z.string().optional().default(""),
-  lesson_type: z.string().optional().default(""),
-  duration: z.string().optional().default(""),
-  class_ability: z.string().optional().default(""),
+  year_group: z.string().optional().default(""),
+  lesson_type: z.enum(["New concept", "Revision & practice", "Exam prep"]).optional().default(""),
+  duration: z.enum(["60", "90"]).optional().default("60"),
+  class_ability: z.enum(["Low", "Medium", "High", "Mixed"]).optional().default("Mixed"),
   class_profile: z.string().optional().default(""),
   curriculum_key: z.string().optional().default("national_pk"),
   prior_learning: z.string().optional().default(""),
   resource_type: z.string().optional().default(""),
-  number_questions: z.coerce.number().int().positive().optional(),
-  difficulty_mix: z.string().optional().default(""),
+  resource_count: z.coerce.number().int().optional(),
+  number_questions: z.coerce.number().int().optional(),
   assessment_type: z.string().optional().default(""),
   total_marks: z.string().optional().default(""),
   rubric: z.string().optional().default(""),
@@ -45,10 +65,12 @@ const requestSchema = z.object({
   refine_request: z.string().optional().default(""),
 });
 
-const promptByMode: Record<string, string> = {
-  lesson: lessonPlannerPrompt,
-  resource: resourceGeneratorPrompt,
-  feedback: feedbackPrompt,
+type ResourceKind = "worksheet" | "mcq" | "slides_pack";
+
+const resourcePrompts: Record<ResourceKind, string> = {
+  worksheet: worksheetPrompt,
+  mcq: mcqPrompt,
+  slides_pack: slidesPackPrompt,
 };
 
 const truncateText = (value: string, max: number) =>
@@ -72,21 +94,18 @@ const extractJson = (value: string) => {
   return cleaned.slice(start, end + 1);
 };
 
-const parseOutput = (value: string) => {
+const parseOutput = <T>(schema: z.ZodType<T>, value: string) => {
   const extracted = extractJson(value) ?? value;
   try {
     const parsed = JSON.parse(extracted);
-    return OutputSchema.safeParse(parsed);
+    return schema.safeParse(parsed);
   } catch {
-    return OutputSchema.safeParse(null);
+    return schema.safeParse(null);
   }
 };
 
-const mergeCitations = (
-  primary: OutputPayload["citations"],
-  secondary: OutputPayload["citations"]
-) => {
-  const map = new Map<string, { source: string; excerpt: string }>();
+const mergeCitations = (primary: Citation[], secondary: Citation[]) => {
+  const map = new Map<string, Citation>();
   [...primary, ...secondary].forEach((citation) => {
     const key = `${citation.source}::${citation.excerpt}`;
     if (!map.has(key)) {
@@ -98,7 +117,7 @@ const mergeCitations = (
 
 const footerLine = "© NexAura. For school use only.";
 
-const applyFooter = (output: OutputPayload) => {
+const applyFooter = (output: { sections: { content: string }[] }) => {
   if (output.sections.length === 0) return output;
   const updatedSections = output.sections.map((section, index) => {
     if (index !== output.sections.length - 1) return section;
@@ -120,6 +139,36 @@ const logUsageSafely = async (payload: Parameters<typeof logUsageEvent>[0]) => {
   } catch (error) {
     console.error("Usage logging failed", error);
   }
+};
+
+const normalizeResourceType = (value: string): ResourceKind | null => {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "worksheet") return "worksheet";
+  if (normalized === "mcq" || normalized === "mcq quiz") return "mcq";
+  if (normalized === "slides_pack" || normalized === "slides content pack") {
+    return "slides_pack";
+  }
+  return null;
+};
+
+const getResourceSchema = (kind: ResourceKind) => {
+  switch (kind) {
+    case "worksheet":
+      return WorksheetResourceSchema;
+    case "mcq":
+      return McqResourceSchema;
+    case "slides_pack":
+      return SlidesPackResourceSchema;
+  }
+};
+
+const resourceSchemaText: Record<ResourceKind, string> = {
+  worksheet:
+    "{\n  \"resource_kind\": \"worksheet\",\n  \"title\": string,\n  \"teacher_instructions\": string,\n  \"questions\": [{ \"number\": int, \"prompt\": string, \"marks\"?: int }],\n  \"answers\": [{ \"number\": int, \"answer\": string }],\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}",
+  mcq:
+    "{\n  \"resource_kind\": \"mcq\",\n  \"title\": string,\n  \"teacher_instructions\": string,\n  \"questions\": [{ \"number\": int, \"stem\": string, \"options\": [string,string,string,string], \"correct_index\": 0|1|2|3, \"misconception_map\"?: [string,string,string,string] }],\n  \"answer_key\": [{ \"number\": int, \"correct_option\": \"A\"|\"B\"|\"C\"|\"D\" }],\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}",
+  slides_pack:
+    "{\n  \"resource_kind\": \"slides_pack\",\n  \"title\": string,\n  \"slides\": [{ \"slide_number\": int, \"title\": string, \"bullets\": [string], \"speaker_notes\": string, \"suggested_visual\"?: string, \"check_for_understanding\"?: string }],\n  \"teacher_appendix\": { \"starter_questions\": [{ \"q\": string, \"answer\": string }], \"mini_whiteboard_checks\": [{ \"q\": string, \"expected\": string, \"common_wrong\"?: string }], \"exit_ticket\": { \"q\": string, \"answer\"?: string } },\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}",
 };
 
 export const POST = async (request: Request) => {
@@ -160,6 +209,7 @@ export const POST = async (request: Request) => {
     topic,
     notes,
     grade,
+    year_group,
     lesson_type,
     duration,
     class_ability,
@@ -167,8 +217,8 @@ export const POST = async (request: Request) => {
     curriculum_key,
     prior_learning,
     resource_type,
+    resource_count,
     number_questions,
-    difficulty_mix,
     assessment_type,
     total_marks,
     rubric,
@@ -177,6 +227,8 @@ export const POST = async (request: Request) => {
     refine_request,
   } = parsed.data;
 
+  const gradeLabel = grade || year_group || "";
+
   if ((mode === "lesson" || mode === "resource") && !topic.trim()) {
     return NextResponse.json({ error: "Topic is required." }, { status: 400 });
   }
@@ -184,13 +236,6 @@ export const POST = async (request: Request) => {
   if (mode === "lesson" && !prior_learning.trim()) {
     return NextResponse.json(
       { error: "Prior learning is required for lesson plans." },
-      { status: 400 }
-    );
-  }
-
-  if (mode === "resource" && resource_type === "Starter questions" && !prior_learning.trim()) {
-    return NextResponse.json(
-      { error: "Prior learning is required for starter questions." },
       { status: 400 }
     );
   }
@@ -216,6 +261,47 @@ export const POST = async (request: Request) => {
   const schoolId = profile?.school_id || null;
 
   const effectiveTopic = topic.trim() ? topic : question_text;
+
+  const normalizedResourceType =
+    mode === "resource" ? normalizeResourceType(resource_type) : null;
+
+  if (mode === "resource" && !normalizedResourceType) {
+    return NextResponse.json({ error: "Resource type is required." }, { status: 400 });
+  }
+
+  if (mode === "resource" && normalizedResourceType === "slides_pack" && !prior_learning.trim()) {
+    return NextResponse.json(
+      { error: "Prior learning is required for slides content packs." },
+      { status: 400 }
+    );
+  }
+
+  const resourceCountRaw = resource_count ?? number_questions ?? null;
+  const resourceCount =
+    mode === "resource" ? (resourceCountRaw ?? NaN) : null;
+  if (
+    mode === "resource" &&
+    (!Number.isFinite(resourceCount) || !Number.isInteger(resourceCount) || resourceCount <= 0)
+  ) {
+    return NextResponse.json(
+      { error: "Resource count must be a positive whole number." },
+      { status: 400 }
+    );
+  }
+
+  let resourceCountClamped = resourceCount;
+  if (mode === "resource" && normalizedResourceType) {
+    const range = RESOURCE_LIMITS[normalizedResourceType];
+    if (resourceCount! < range.min || resourceCount! > range.max) {
+      return NextResponse.json(
+        {
+          error: `Resource count must be between ${range.min} and ${range.max} for ${normalizedResourceType.replace("_", " ")}.`,
+        },
+        { status: 400 }
+      );
+    }
+    resourceCountClamped = Math.min(Math.max(resourceCount!, range.min), range.max);
+  }
 
   const combinedInput = [
     effectiveTopic,
@@ -306,25 +392,34 @@ export const POST = async (request: Request) => {
     }
   }
 
-  const gradeLabel = grade || "";
-  const curriculumQuery =
-    mode === "resource" && resource_type === "Starter questions"
-      ? `${prior_learning} ${gradeLabel}`
-      : mode === "feedback"
+  const mainQuery =
+    mode === "feedback"
       ? `${effectiveTopic} ${gradeLabel} ${assessment_type}`
-      : `${effectiveTopic} ${notes} ${gradeLabel} ${lesson_type} ${resource_type}`;
+      : `${effectiveTopic} ${notes} ${gradeLabel} ${lesson_type} ${normalizedResourceType ?? ""}`;
+  const starterQuery =
+    mode === "lesson" || normalizedResourceType === "slides_pack"
+      ? `${prior_learning} ${gradeLabel}`
+      : null;
 
-  const curriculumSnippets = retrieveCurriculumSnippets(
-    curriculumQuery,
+  const { mainSnippets, starterSnippets } = retrieveCurriculumBundles(
+    mainQuery,
+    starterQuery,
     curriculum_key || "national_pk"
   );
 
-  const curriculumText = curriculumSnippets.length
-    ? curriculumSnippets
+  const curriculumText = mainSnippets.length
+    ? mainSnippets
         .map((snippet, index) => `${index + 1}. (${snippet.source}) ${snippet.text}`)
         .join("\n")
     : "No relevant curriculum excerpts found.";
-  const limitedCurriculum = curriculumSnippets.length === 0;
+
+  const starterCurriculumText = starterSnippets.length
+    ? starterSnippets
+        .map((snippet, index) => `${index + 1}. (${snippet.source}) ${snippet.text}`)
+        .join("\n")
+    : "No relevant curriculum excerpts found.";
+
+  const limitedCurriculum = mainSnippets.length === 0;
 
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -338,11 +433,10 @@ export const POST = async (request: Request) => {
     class_ability ? `- Class ability: ${class_ability}` : null,
     class_profile ? `- Class profile: ${class_profile}` : null,
     prior_learning ? `- Prior learning / previous lesson: ${prior_learning}` : null,
-    resource_type ? `- Resource type: ${resource_type}` : null,
-    typeof number_questions === "number"
-      ? `- Number of questions: ${number_questions}`
+    normalizedResourceType ? `- Resource type: ${normalizedResourceType}` : null,
+    Number.isFinite(resourceCountClamped)
+      ? `- Resource count: ${resourceCountClamped}`
       : null,
-    difficulty_mix ? `- Difficulty mix guidance: ${difficulty_mix}` : null,
     assessment_type ? `- Assessment type: ${assessment_type}` : null,
     total_marks ? `- Total marks: ${total_marks}` : null,
     rubric ? `- Rubric: ${rubric}` : null,
@@ -355,12 +449,22 @@ export const POST = async (request: Request) => {
     refine_request ? `- Refinement request: ${refine_request}` : null,
   ].filter(Boolean);
 
-  const prompt = `${promptByMode[mode]}
+  const basePrompt =
+    mode === "resource" && normalizedResourceType
+      ? resourcePrompts[normalizedResourceType]
+      : mode === "lesson"
+      ? lessonPlannerPrompt
+      : feedbackPrompt;
+
+  const prompt = `${basePrompt}
 
 Context:
 ${contextLines.join("\n") || "- None"}
 
-Curriculum excerpts:
+Starter curriculum excerpts (prior learning):
+${starterCurriculumText}
+
+Main curriculum excerpts (current topic):
 ${curriculumText}
 
 Output JSON only.`;
@@ -374,7 +478,10 @@ Output JSON only.`;
         { role: "user", content: prompt },
       ],
       temperature: 0.2,
-      max_tokens: MAX_TOKENS[mode],
+      max_tokens:
+        mode === "resource" && normalizedResourceType
+          ? MAX_TOKENS[normalizedResourceType]
+          : MAX_TOKENS[mode],
       response_format: { type: "json_object" },
     });
   } catch (error) {
@@ -409,15 +516,23 @@ Output JSON only.`;
   }
 
   const content = response.choices[0]?.message?.content || "";
-  const primaryParse = parseOutput(content);
+  const schema =
+    mode === "resource" && normalizedResourceType
+      ? getResourceSchema(normalizedResourceType)
+      : GenericOutputSchema;
+  const primaryParse = parseOutput(schema, content);
 
-  let finalOutput: OutputPayload | null = null;
+  let finalOutput: ResourceOutput | z.infer<typeof GenericOutputSchema> | null = null;
   let repairUsed = false;
 
   if (primaryParse.success) {
     finalOutput = primaryParse.data;
   } else {
     const extracted = extractJson(content) ?? content;
+    const schemaText =
+      mode === "resource" && normalizedResourceType
+        ? resourceSchemaText[normalizedResourceType]
+        : "{\n  \"title\": string,\n  \"sections\": [{ \"heading\": string, \"content\": string }],\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}";
     try {
       const repair = await openai.chat.completions.create({
         model: process.env.MODEL_NAME || "gpt-4o-mini",
@@ -429,7 +544,7 @@ Output JSON only.`;
           },
           {
             role: "user",
-            content: `Schema:\n{\n  \"title\": string,\n  \"sections\": [{ \"heading\": string, \"content\": string }],\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`,
+            content: `Schema:\n${schemaText}\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`,
           },
         ],
         temperature: 0,
@@ -438,7 +553,7 @@ Output JSON only.`;
       });
 
       const repairedContent = repair.choices[0]?.message?.content || "";
-      const repairParse = parseOutput(repairedContent);
+      const repairParse = parseOutput(schema, repairedContent);
       if (repairParse.success) {
         finalOutput = repairParse.data;
         repairUsed = true;
@@ -448,14 +563,12 @@ Output JSON only.`;
     }
   }
 
-  const retrievedCitations = curriculumSnippets.map((snippet) => ({
+  const retrievedCitations = [...starterSnippets, ...mainSnippets].map((snippet) => ({
     source: snippet.source,
     excerpt: snippet.text,
   }));
 
   if (!finalOutput) {
-    const truncated = truncateText(content, 2000);
-
     if (schoolId) {
       await logUsageSafely({
         schoolId,
@@ -472,6 +585,14 @@ Output JSON only.`;
       });
     }
 
+    if (mode === "resource") {
+      return NextResponse.json(
+        { error: "Unable to format resource output. Please try again." },
+        { status: 500 }
+      );
+    }
+
+    const truncated = truncateText(content, 2000);
     return NextResponse.json({
       title: "Draft Output",
       sections: [
@@ -492,8 +613,48 @@ Output JSON only.`;
     });
   }
 
-  const mergedCitations = mergeCitations(finalOutput.citations ?? [], retrievedCitations);
-  const finalWithFooter = applyFooter({ ...finalOutput, citations: mergedCitations });
+  if (mode === "resource") {
+    const resourceOutput = finalOutput as ResourceOutput;
+    const mergedCitations = mergeCitations(resourceOutput.citations ?? [], retrievedCitations);
+    if (schoolId) {
+      await logUsageSafely({
+        schoolId,
+        mode,
+        latencyMs: Date.now() - start,
+        model: response.model,
+        tokensEstimate: response.usage?.total_tokens ?? null,
+        costEstimateUsd: null,
+        status: "success",
+        repairUsed,
+        topicLen: rawTopic.length,
+        notesLen: rawNotes.length,
+        studentTextLen: rawStudentText.length,
+      });
+    }
+
+    return NextResponse.json({
+      ...resourceOutput,
+      citations: mergedCitations,
+      formatWarning: false,
+      repairUsed,
+      curriculumWarning: limitedCurriculum,
+      debug: {
+        resource_kind: resourceOutput.resource_kind,
+        curriculum: curriculum_key,
+        starter_retrieval_used:
+          resourceOutput.resource_kind === "slides_pack" && Boolean(prior_learning.trim()),
+      },
+    });
+  }
+
+  const mergedCitations = mergeCitations(
+    (finalOutput as z.infer<typeof GenericOutputSchema>).citations ?? [],
+    retrievedCitations
+  );
+  const finalWithFooter = applyFooter({
+    ...(finalOutput as z.infer<typeof GenericOutputSchema>),
+    citations: mergedCitations,
+  });
 
   if (schoolId) {
     await logUsageSafely({
@@ -514,8 +675,7 @@ Output JSON only.`;
   return NextResponse.json({
     title: finalWithFooter.title,
     sections: finalWithFooter.sections,
-    slides: finalWithFooter.slides,
-    citations: finalWithFooter.citations,
+    citations: mergedCitations,
     formatWarning: false,
     repairUsed,
     curriculumWarning: limitedCurriculum,

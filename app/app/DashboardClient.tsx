@@ -7,6 +7,7 @@ import OutputViewer from "@/components/OutputViewer";
 import DownloadButton from "@/components/DownloadButton";
 import PrivacyWarningModal from "@/components/PrivacyWarningModal";
 import ConfirmModal from "@/components/ConfirmModal";
+import ResourceOutputViewer from "@/components/ResourceOutputViewer";
 import { SelectField, TextAreaField, TextField } from "@/components/FormControls";
 import { containsPii } from "@/lib/validators/pii";
 
@@ -15,28 +16,110 @@ interface Section {
   content: string;
 }
 
-interface SlideContent {
-  title: string;
-  bullets: string[];
-  speakerNotes: string;
-  suggestedVisual?: string;
-  checkForUnderstanding?: string;
-}
-
 interface Citation {
   source: string;
   excerpt: string;
 }
 
-interface OutputState {
+interface WorksheetQuestion {
+  number: number;
+  prompt: string;
+  marks?: number;
+}
+
+interface WorksheetAnswer {
+  number: number;
+  answer: string;
+}
+
+interface McqQuestion {
+  number: number;
+  stem: string;
+  options: [string, string, string, string];
+  correct_index: number;
+  misconception_map?: [string, string, string, string];
+}
+
+interface McqAnswerKeyEntry {
+  number: number;
+  correct_option: "A" | "B" | "C" | "D";
+}
+
+interface SlidesPackSlide {
+  slide_number: number;
+  title: string;
+  bullets: string[];
+  speaker_notes: string;
+  suggested_visual?: string;
+  check_for_understanding?: string;
+}
+
+interface SlidesPackAppendix {
+  starter_questions: { q: string; answer: string }[];
+  mini_whiteboard_checks: { q: string; expected: string; common_wrong?: string }[];
+  exit_ticket: { q: string; answer?: string };
+}
+
+interface DebugInfo {
+  resource_kind?: string;
+  curriculum?: string;
+  starter_retrieval_used?: boolean;
+}
+
+interface GenericOutputState {
+  kind: "generic";
   title: string;
   sections: Section[];
-  slides?: SlideContent[];
   citations: Citation[];
   formatWarning?: boolean;
   curriculumWarning?: boolean;
   message?: string | null;
 }
+
+interface WorksheetOutputState {
+  kind: "resource";
+  resource_kind: "worksheet";
+  title: string;
+  teacher_instructions: string;
+  questions: WorksheetQuestion[];
+  answers: WorksheetAnswer[];
+  citations: Citation[];
+  formatWarning?: boolean;
+  curriculumWarning?: boolean;
+  message?: string | null;
+  debug?: DebugInfo;
+}
+
+interface McqOutputState {
+  kind: "resource";
+  resource_kind: "mcq";
+  title: string;
+  teacher_instructions: string;
+  questions: McqQuestion[];
+  answer_key: McqAnswerKeyEntry[];
+  citations: Citation[];
+  formatWarning?: boolean;
+  curriculumWarning?: boolean;
+  message?: string | null;
+  debug?: DebugInfo;
+}
+
+interface SlidesPackOutputState {
+  kind: "resource";
+  resource_kind: "slides_pack";
+  title: string;
+  slides: SlidesPackSlide[];
+  teacher_appendix: SlidesPackAppendix;
+  citations: Citation[];
+  formatWarning?: boolean;
+  curriculumWarning?: boolean;
+  message?: string | null;
+  debug?: DebugInfo;
+}
+
+type ResourceOutputState = WorksheetOutputState | McqOutputState | SlidesPackOutputState;
+
+type OutputState = GenericOutputState | ResourceOutputState;
 
 interface DashboardClientProps {
   schoolName: string;
@@ -77,9 +160,9 @@ const abilityOptions = [
 ];
 
 const resourceTypeOptions = [
-  { value: "Worksheet", label: "Worksheet" },
-  { value: "MCQ quiz", label: "MCQ quiz" },
-  { value: "Slides content pack", label: "Slides content pack" },
+  { value: "worksheet", label: "Worksheet" },
+  { value: "mcq", label: "MCQ quiz" },
+  { value: "slides_pack", label: "Slides content pack" },
 ];
 
 const assessmentTypeOptions = [
@@ -94,19 +177,19 @@ const resourceCountConfig: Record<
   string,
   { min: number; max: number; defaultValue: string; label: string }
 > = {
-  Worksheet: {
+  worksheet: {
     min: 6,
     max: 20,
     defaultValue: "10",
     label: "Number of questions",
   },
-  "MCQ quiz": {
+  mcq: {
     min: 6,
     max: 15,
     defaultValue: "10",
     label: "Number of questions",
   },
-  "Slides content pack": {
+  slides_pack: {
     min: 8,
     max: 18,
     defaultValue: "12",
@@ -139,6 +222,16 @@ const summaryByTab: Record<TabKey, { title: string; bullets: string[] }> = {
 
 const storageKeyForInputs = (tab: TabKey) => `nexaura_inputs_${tab}`;
 const storageKeyForOutput = (tab: TabKey) => `nexaura_output_${tab}`;
+
+const normalizeResourceTypeInput = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "worksheet") return "worksheet";
+  if (normalized === "mcq" || normalized === "mcq quiz") return "mcq";
+  if (normalized === "slides_pack" || normalized === "slides content pack") {
+    return "slides_pack";
+  }
+  return value;
+};
 
 interface LessonInputs {
   topic: string;
@@ -189,7 +282,7 @@ const defaultResourceInputs: ResourceInputs = {
   topic: "Cells and specialised cells",
   grade: "Grade 8",
   curriculumKey: "national_pk",
-  resourceType: "Worksheet",
+  resourceType: "worksheet",
   questionCount: "10",
   classAbility: "Mixed",
   priorLearning: "Basic plant vs animal cells and organelles",
@@ -242,6 +335,11 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
   const [showPiiModal, setShowPiiModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<"generate" | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState<Record<TabKey, boolean>>({
+    lesson: false,
+    resource: false,
+    feedback: false,
+  });
 
   const outputRef = useRef<HTMLDivElement | null>(null);
 
@@ -256,7 +354,13 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
     const storedFeedback = sessionStorage.getItem(storageKeyForInputs("feedback"));
 
     if (storedLesson) setLessonInputs(JSON.parse(storedLesson));
-    if (storedResource) setResourceInputs(JSON.parse(storedResource));
+    if (storedResource) {
+      const parsedResource = JSON.parse(storedResource) as ResourceInputs;
+      setResourceInputs({
+        ...parsedResource,
+        resourceType: normalizeResourceTypeInput(parsedResource.resourceType),
+      });
+    }
     if (storedFeedback) setFeedbackInputs(JSON.parse(storedFeedback));
 
     const outputs: Record<TabKey, OutputState | null> = {
@@ -267,7 +371,18 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
     (Object.keys(outputs) as TabKey[]).forEach((tab) => {
       const stored = sessionStorage.getItem(storageKeyForOutput(tab));
       if (stored) {
-        outputs[tab] = JSON.parse(stored) as OutputState;
+        const parsed = JSON.parse(stored) as OutputState;
+        if (tab === "resource") {
+          outputs[tab] =
+            parsed && "resource_kind" in parsed
+              ? ({ ...parsed, kind: "resource" } as ResourceOutputState)
+              : null;
+        } else {
+          outputs[tab] =
+            parsed && "sections" in parsed
+              ? ({ ...parsed, kind: "generic" } as GenericOutputState)
+              : null;
+        }
       }
     });
     setTabOutputs(outputs);
@@ -317,7 +432,7 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
 
   const priorLearningRequired =
     activeTab === "lesson" ||
-    (activeTab === "resource" && resourceInputs.resourceType === "Slides content pack");
+    (activeTab === "resource" && resourceInputs.resourceType === "slides_pack");
 
   const countConfig = resourceCountConfig[resourceInputs.resourceType] ?? {
     min: 1,
@@ -429,7 +544,7 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
               class_ability: resourceInputs.classAbility,
               curriculum_key: resourceInputs.curriculumKey,
               resource_type: resourceInputs.resourceType,
-              number_questions: questionCountNumber,
+              resource_count: questionCountNumber,
               prior_learning: resourceInputs.priorLearning,
               notes: resourceInputs.notes,
             }
@@ -457,17 +572,62 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
       }
 
       const data = await response.json();
-      const output: OutputState = {
-        title: data.title,
-        sections: data.sections || [],
-        slides: data.slides || undefined,
-        citations: data.citations || [],
-        formatWarning: data.formatWarning,
-        curriculumWarning: data.curriculumWarning,
-        message: data.message || null,
-      };
+      if (activeTab === "resource") {
+        const base = {
+          kind: "resource" as const,
+          resource_kind: data.resource_kind,
+          title: data.title,
+          citations: data.citations || [],
+          formatWarning: data.formatWarning,
+          curriculumWarning: data.curriculumWarning,
+          message: data.message || null,
+          debug: data.debug,
+        };
 
-      setTabOutputs((prev) => ({ ...prev, [activeTab]: output }));
+        let output: ResourceOutputState;
+        if (data.resource_kind === "worksheet") {
+          output = {
+            ...base,
+            resource_kind: "worksheet",
+            teacher_instructions: data.teacher_instructions,
+            questions: data.questions || [],
+            answers: data.answers || [],
+          };
+        } else if (data.resource_kind === "mcq") {
+          output = {
+            ...base,
+            resource_kind: "mcq",
+            teacher_instructions: data.teacher_instructions,
+            questions: data.questions || [],
+            answer_key: data.answer_key || [],
+          };
+        } else {
+          output = {
+            ...base,
+            resource_kind: "slides_pack",
+            slides: data.slides || [],
+            teacher_appendix:
+              data.teacher_appendix || {
+                starter_questions: [],
+                mini_whiteboard_checks: [],
+                exit_ticket: { q: "" },
+              },
+          };
+        }
+
+        setTabOutputs((prev) => ({ ...prev, [activeTab]: output }));
+      } else {
+        const output: GenericOutputState = {
+          kind: "generic",
+          title: data.title,
+          sections: data.sections || [],
+          citations: data.citations || [],
+          formatWarning: data.formatWarning,
+          curriculumWarning: data.curriculumWarning,
+          message: data.message || null,
+        };
+        setTabOutputs((prev) => ({ ...prev, [activeTab]: output }));
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
       setError(message);
@@ -618,7 +778,7 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                   options={abilityOptions}
                   onChange={(value) => setResourceInputs((prev) => ({ ...prev, classAbility: value }))}
                 />
-                {resourceInputs.resourceType === "Slides content pack" ? (
+                {resourceInputs.resourceType === "slides_pack" ? (
                   <TextField
                     id="prior-learning"
                     label="Prior learning / previous lesson (required)"
@@ -677,7 +837,13 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
 
             {activeTab === "lesson" ? (
               <>
-                <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <details
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                  open={advancedOpen.lesson}
+                  onToggle={(event) =>
+                    setAdvancedOpen((prev) => ({ ...prev, lesson: event.currentTarget.open }))
+                  }
+                >
                   <summary className="cursor-pointer text-sm font-semibold text-slate-700">
                     Advanced options
                   </summary>
@@ -715,7 +881,13 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
             ) : null}
 
             {activeTab === "resource" ? (
-              <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <details
+                className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                open={advancedOpen.resource}
+                onToggle={(event) =>
+                  setAdvancedOpen((prev) => ({ ...prev, resource: event.currentTarget.open }))
+                }
+              >
                 <summary className="cursor-pointer text-sm font-semibold text-slate-700">
                   Advanced options
                 </summary>
@@ -727,13 +899,29 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                     onChange={(value) => setResourceInputs((prev) => ({ ...prev, notes: value }))}
                     rows={3}
                   />
+                  {advancedOpen.resource &&
+                  currentOutput &&
+                  currentOutput.kind === "resource" &&
+                  currentOutput.debug ? (
+                    <p className="text-xs text-slate-500">
+                      Debug: {currentOutput.debug.resource_kind || "n/a"} ·{" "}
+                      {currentOutput.debug.curriculum || "n/a"} · Starter retrieval{" "}
+                      {currentOutput.debug.starter_retrieval_used ? "used" : "not used"}
+                    </p>
+                  ) : null}
                 </div>
               </details>
             ) : null}
 
             {activeTab === "feedback" ? (
               <>
-                <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <details
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                  open={advancedOpen.feedback}
+                  onToggle={(event) =>
+                    setAdvancedOpen((prev) => ({ ...prev, feedback: event.currentTarget.open }))
+                  }
+                >
                   <summary className="cursor-pointer text-sm font-semibold text-slate-700">
                     Advanced options
                   </summary>
@@ -788,14 +976,54 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
               >
                 {loading ? "Generating…" : "Generate"}
               </button>
-              {currentOutput && currentOutput.sections?.length ? (
+              {currentOutput &&
+              (currentOutput.kind === "resource" ||
+                (currentOutput.kind === "generic" && currentOutput.sections.length)) ? (
                 <DownloadButton
                   title={currentOutput.title}
-                  topic={activeTab === "feedback" ? feedbackInputs.questionText : resourceInputs.topic}
+                  topic={
+                    activeTab === "lesson"
+                      ? lessonInputs.topic
+                      : activeTab === "feedback"
+                      ? feedbackInputs.questionText
+                      : resourceInputs.topic
+                  }
                   mode={activeTab}
-                  sections={currentOutput.sections}
-                  slides={currentOutput.slides}
+                  sections={currentOutput.kind === "generic" ? currentOutput.sections : undefined}
                   citations={currentOutput.citations}
+                  resource={
+                    currentOutput.kind === "resource"
+                      ? {
+                          resource_kind: currentOutput.resource_kind,
+                          title: currentOutput.title,
+                          teacher_instructions:
+                            currentOutput.resource_kind !== "slides_pack"
+                              ? currentOutput.teacher_instructions
+                              : undefined,
+                          questions:
+                            currentOutput.resource_kind === "worksheet" ||
+                            currentOutput.resource_kind === "mcq"
+                              ? currentOutput.questions
+                              : undefined,
+                          answers:
+                            currentOutput.resource_kind === "worksheet"
+                              ? currentOutput.answers
+                              : undefined,
+                          answer_key:
+                            currentOutput.resource_kind === "mcq"
+                              ? currentOutput.answer_key
+                              : undefined,
+                          slides:
+                            currentOutput.resource_kind === "slides_pack"
+                              ? currentOutput.slides
+                              : undefined,
+                          teacher_appendix:
+                            currentOutput.resource_kind === "slides_pack"
+                              ? currentOutput.teacher_appendix
+                              : undefined,
+                        }
+                      : undefined
+                  }
                 />
               ) : null}
               <button
@@ -811,16 +1039,24 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
 
           <div ref={outputRef}>
             {currentOutput ? (
-              <OutputViewer
-                title={currentOutput.title}
-                sections={currentOutput.sections}
-                slides={currentOutput.slides}
-                citations={currentOutput.citations}
-                error={error}
-                formatWarning={currentOutput.formatWarning}
-                curriculumWarning={currentOutput.curriculumWarning}
-                message={currentOutput.message}
-              />
+              currentOutput.kind === "resource" ? (
+                <ResourceOutputViewer
+                  output={currentOutput}
+                  formatWarning={currentOutput.formatWarning}
+                  curriculumWarning={currentOutput.curriculumWarning}
+                  message={currentOutput.message}
+                />
+              ) : (
+                <OutputViewer
+                  title={currentOutput.title}
+                  sections={currentOutput.sections}
+                  citations={currentOutput.citations}
+                  error={error}
+                  formatWarning={currentOutput.formatWarning}
+                  curriculumWarning={currentOutput.curriculumWarning}
+                  message={currentOutput.message}
+                />
+              )
             ) : (
               <OutputViewer error={error} />
             )}
