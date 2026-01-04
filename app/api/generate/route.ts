@@ -22,13 +22,16 @@ import {
   type ResourceOutput,
 } from "@/lib/validators/output";
 
+type ResourceKind = "worksheet" | "mcq" | "slides_pack";
+type NonResourceMode = "lesson" | "feedback";
+
 const LIMITS = {
   topic: 200,
   notes: 1500,
   studentText: 6000,
 };
 
-const MAX_TOKENS: Record<"lesson" | "feedback" | ResourceKind, number> = {
+const MAX_TOKENS: Record<NonResourceMode | ResourceKind, number> = {
   lesson: 1400,
   feedback: 900,
   worksheet: 900,
@@ -67,8 +70,6 @@ const requestSchema = z.object({
   student_text: z.string().optional().default(""),
   refine_request: z.string().optional().default(""),
 });
-
-type ResourceKind = "worksheet" | "mcq" | "slides_pack";
 
 const resourcePrompts: Record<ResourceKind, string> = {
   worksheet: worksheetPrompt,
@@ -484,7 +485,8 @@ Output JSON only.`;
     if (mode === "resource" && normalizedResourceType) {
       return MAX_TOKENS[normalizedResourceType];
     }
-    return MAX_TOKENS[mode];
+    const nonResourceMode: NonResourceMode = mode;
+    return MAX_TOKENS[nonResourceMode];
   };
 
   let response: OpenAI.Chat.Completions.ChatCompletion | null = null;
