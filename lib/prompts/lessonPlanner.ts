@@ -23,9 +23,15 @@ Use the following EXACT section headings and order:
 
 Requirements:
 - Use Grade (not Year).
+- Prior Knowledge & Diagnostic must be based on the prior learning input (not the current topic).
 - Include 3–5 objectives, 3–5 success criteria, 5–10 vocabulary items, 3–6 misconceptions, and 4–6 checks for understanding.
 - Include rough timings in minutes that sum to the lesson duration.
-- Avoid abbreviations; write full phrases.
+- Apply class ability rules:
+  - Low: 70/25/5 difficulty mix, step-by-step guidance, sentence starters, more guided examples.
+  - Mixed: 50/35/15 difficulty mix.
+  - High: 30/40/30 difficulty mix, more reasoning, fewer hints, extension prompts.
+- Format objectives, vocabulary, misconceptions, and checks as bullet lines starting with "- ".
+- Format the lesson sequence as clear steps with timings, each on a new line.
 - End the final section with: "© NexAura. For school use only."
 - If curriculum is missing, include the exact phrase: "Not found in provided curriculum documents" and proceed with safe assumptions.
 Output JSON only.`;

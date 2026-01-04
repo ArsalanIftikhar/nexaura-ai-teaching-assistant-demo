@@ -25,25 +25,24 @@ const MAX_TOKENS: Record<string, number> = {
 
 const requestSchema = z.object({
   mode: z.enum(["lesson", "resource", "feedback"]),
-  topic: z.string().min(2),
+  topic: z.string().optional().default(""),
   notes: z.string().optional().default(""),
   grade: z.string().optional().default(""),
-  year_group: z.string().optional().default(""),
   lesson_type: z.string().optional().default(""),
   duration: z.string().optional().default(""),
   class_ability: z.string().optional().default(""),
   class_profile: z.string().optional().default(""),
   curriculum_key: z.string().optional().default("national_pk"),
+  prior_learning: z.string().optional().default(""),
   resource_type: z.string().optional().default(""),
   number_questions: z.coerce.number().int().positive().optional(),
+  difficulty_mix: z.string().optional().default(""),
   assessment_type: z.string().optional().default(""),
   total_marks: z.string().optional().default(""),
   rubric: z.string().optional().default(""),
-  teacher_guidance: z.string().optional().default(""),
+  question_text: z.string().optional().default(""),
   student_text: z.string().optional().default(""),
   refine_request: z.string().optional().default(""),
-  consistency_lock: z.boolean().optional().default(false),
-  topic_session_context: z.string().optional().default(""),
 });
 
 const promptByMode: Record<string, string> = {
@@ -161,23 +160,52 @@ export const POST = async (request: Request) => {
     topic,
     notes,
     grade,
-    year_group,
     lesson_type,
     duration,
     class_ability,
     class_profile,
     curriculum_key,
+    prior_learning,
     resource_type,
     number_questions,
+    difficulty_mix,
     assessment_type,
     total_marks,
     rubric,
-    teacher_guidance,
+    question_text,
     student_text,
     refine_request,
-    consistency_lock,
-    topic_session_context,
   } = parsed.data;
+
+  if ((mode === "lesson" || mode === "resource") && !topic.trim()) {
+    return NextResponse.json({ error: "Topic is required." }, { status: 400 });
+  }
+
+  if (mode === "lesson" && !prior_learning.trim()) {
+    return NextResponse.json(
+      { error: "Prior learning is required for lesson plans." },
+      { status: 400 }
+    );
+  }
+
+  if (mode === "resource" && resource_type === "Starter questions" && !prior_learning.trim()) {
+    return NextResponse.json(
+      { error: "Prior learning is required for starter questions." },
+      { status: 400 }
+    );
+  }
+
+  if (mode === "feedback") {
+    if (!topic.trim()) {
+      // allow topic to be absent for feedback
+    }
+    if (!question_text.trim() || !student_text.trim()) {
+      return NextResponse.json(
+        { error: "Question set and student response are required." },
+        { status: 400 }
+      );
+    }
+  }
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -187,7 +215,16 @@ export const POST = async (request: Request) => {
 
   const schoolId = profile?.school_id || null;
 
-  const combinedInput = [topic, notes, student_text, refine_request]
+  const effectiveTopic = topic.trim() ? topic : question_text;
+
+  const combinedInput = [
+    effectiveTopic,
+    notes,
+    prior_learning,
+    question_text,
+    student_text,
+    refine_request,
+  ]
     .filter(Boolean)
     .join(" ");
   const scopeDecision = evaluateScope(mode, combinedInput);
@@ -269,9 +306,16 @@ export const POST = async (request: Request) => {
     }
   }
 
-  const gradeLabel = grade || year_group || "";
+  const gradeLabel = grade || "";
+  const curriculumQuery =
+    mode === "resource" && resource_type === "Starter questions"
+      ? `${prior_learning} ${gradeLabel}`
+      : mode === "feedback"
+      ? `${effectiveTopic} ${gradeLabel} ${assessment_type}`
+      : `${effectiveTopic} ${notes} ${gradeLabel} ${lesson_type} ${resource_type}`;
+
   const curriculumSnippets = retrieveCurriculumSnippets(
-    `${topic} ${notes} ${gradeLabel} ${lesson_type} ${resource_type}`,
+    curriculumQuery,
     curriculum_key || "national_pk"
   );
 
@@ -287,29 +331,28 @@ export const POST = async (request: Request) => {
   });
 
   const contextLines = [
-    `- Topic: ${topic}`,
+    `- Topic: ${effectiveTopic}`,
     gradeLabel ? `- Grade: ${gradeLabel}` : null,
     lesson_type ? `- Lesson type: ${lesson_type}` : null,
     duration ? `- Duration: ${duration}` : null,
     class_ability ? `- Class ability: ${class_ability}` : null,
     class_profile ? `- Class profile: ${class_profile}` : null,
+    prior_learning ? `- Prior learning / previous lesson: ${prior_learning}` : null,
     resource_type ? `- Resource type: ${resource_type}` : null,
     typeof number_questions === "number"
       ? `- Number of questions: ${number_questions}`
       : null,
+    difficulty_mix ? `- Difficulty mix guidance: ${difficulty_mix}` : null,
     assessment_type ? `- Assessment type: ${assessment_type}` : null,
     total_marks ? `- Total marks: ${total_marks}` : null,
     rubric ? `- Rubric: ${rubric}` : null,
-    teacher_guidance ? `- Teacher guidance: ${teacher_guidance}` : null,
+    question_text ? `- Question(s) set: ${question_text}` : null,
     notes ? `- Notes: ${notes}${notesTruncated ? " (truncated)" : ""}` : null,
     mode === "feedback"
       ? `- Student response/work: ${student_text || "None"}${studentTextTruncated ? " (truncated)" : ""}`
       : null,
     topicTruncated ? "- Topic was truncated to fit limits." : null,
     refine_request ? `- Refinement request: ${refine_request}` : null,
-    consistency_lock && topic_session_context
-      ? `- Topic session context (reuse objectives, vocabulary, misconceptions, checks): ${topic_session_context}`
-      : null,
   ].filter(Boolean);
 
   const prompt = `${promptByMode[mode]}
@@ -471,6 +514,7 @@ Output JSON only.`;
   return NextResponse.json({
     title: finalWithFooter.title,
     sections: finalWithFooter.sections,
+    slides: finalWithFooter.slides,
     citations: finalWithFooter.citations,
     formatWarning: false,
     repairUsed,

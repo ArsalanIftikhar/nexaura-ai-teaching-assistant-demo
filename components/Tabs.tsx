@@ -9,7 +9,6 @@ const tabs = [
   { id: "lesson", label: "Lesson Plan" },
   { id: "resource", label: "Resources" },
   { id: "feedback", label: "Feedback" },
-  { id: "slides", label: "Slides (PowerPoint)" },
 ];
 
 export default function Tabs({ active, onChange }: TabsProps) {

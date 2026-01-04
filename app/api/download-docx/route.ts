@@ -12,6 +12,17 @@ const requestSchema = z.object({
       content: z.string().min(1),
     })
   ),
+  slides: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        bullets: z.array(z.string().min(1)).min(1),
+        speakerNotes: z.string().min(1),
+        suggestedVisual: z.string().optional(),
+        checkForUnderstanding: z.string().optional(),
+      })
+    )
+    .optional(),
   citations: z
     .array(
       z.object({
@@ -48,7 +59,7 @@ export const POST = async (request: Request) => {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  const { title, topic, mode, sections, citations } = parsed.data;
+  const { title, topic, mode, sections, citations, slides } = parsed.data;
   const date = new Date().toISOString().slice(0, 10);
   const filename = `NexAura_${sanitizeFilename(mode)}_${sanitizeFilename(
     topic
@@ -69,6 +80,49 @@ export const POST = async (request: Request) => {
       ...buildParagraphs(section.content)
     );
   });
+
+  if (slides && slides.length > 0) {
+    content.push(
+      new Paragraph({
+        children: [new TextRun({ text: "Slides content pack", bold: true, size: 24 })],
+        spacing: { before: 360, after: 120 },
+      })
+    );
+
+    slides.forEach((slide, index) => {
+      content.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: `Slide ${index + 1}: ${slide.title}`, bold: true }),
+          ],
+          spacing: { before: 240, after: 120 },
+        })
+      );
+      slide.bullets.forEach((bullet) => {
+        content.push(
+          new Paragraph({
+            text: bullet,
+            bullet: { level: 0 },
+          })
+        );
+      });
+      if (slide.checkForUnderstanding) {
+        content.push(
+          new Paragraph({
+            text: `Check for understanding: ${slide.checkForUnderstanding}`,
+          })
+        );
+      }
+      if (slide.suggestedVisual) {
+        content.push(
+          new Paragraph({
+            text: `Suggested visual: ${slide.suggestedVisual}`,
+          })
+        );
+      }
+      content.push(new Paragraph({ text: `Speaker notes: ${slide.speakerNotes}` }));
+    });
+  }
 
   if (citations.length > 0) {
     content.push(

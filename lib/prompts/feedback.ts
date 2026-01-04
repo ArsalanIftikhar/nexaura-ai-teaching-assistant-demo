@@ -15,6 +15,7 @@ Use the following EXACT section headings and order:
 
 Requirements:
 - Use Grade (not Year).
+- Reference the question(s) set when giving feedback.
 - Include strengths, next steps, misconceptions detected, one improvement target, and an optional extension prompt.
 - If total marks are provided, include an indicative mark with a disclaimer.
 - Remind to remove names/personal data.

@@ -12,12 +12,21 @@ interface Citation {
   excerpt: string;
 }
 
+interface SlideContent {
+  title: string;
+  bullets: string[];
+  speakerNotes: string;
+  suggestedVisual?: string;
+  checkForUnderstanding?: string;
+}
+
 interface DownloadButtonProps {
   title: string;
   topic: string;
   mode: string;
   sections: Section[];
   citations: Citation[];
+  slides?: SlideContent[];
 }
 
 export default function DownloadButton({
@@ -26,6 +35,7 @@ export default function DownloadButton({
   mode,
   sections,
   citations,
+  slides,
 }: DownloadButtonProps) {
   const [loading, setLoading] = useState(false);
 
@@ -37,7 +47,7 @@ export default function DownloadButton({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ title, topic, mode, sections, citations }),
+        body: JSON.stringify({ title, topic, mode, sections, citations, slides }),
       });
 
       if (!response.ok) {
