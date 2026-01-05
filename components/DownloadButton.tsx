@@ -36,16 +36,9 @@ interface DownloadButtonProps {
       slide_number: number;
       title: string;
       bullets: string[];
-      speaker_notes: string;
-      suggested_visual?: string;
-      check_for_understanding?: string;
+      speaker_notes?: string;
     }>;
-    teacher_appendix?: {
-      starter_questions: Array<{ q: string; answer: string }>;
-      mini_whiteboard_checks: Array<{ q: string; expected: string; common_wrong?: string }>;
-      exit_ticket: { q: string; answer?: string };
-      differentiation_note?: string;
-    };
+    teacher_appendix?: string;
   };
 }
 

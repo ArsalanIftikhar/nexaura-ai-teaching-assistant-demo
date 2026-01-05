@@ -14,7 +14,7 @@ type ResourceOutput =
       teacher_instructions: string;
       questions: Array<{ number: number; prompt: string }>;
       answers: Array<{ number: number; answer: string }>;
-      citations: Citation[];
+      citations?: Citation[];
     }
   | {
       resource_kind: "mcq";
@@ -28,7 +28,7 @@ type ResourceOutput =
         explanation: string;
       }>;
       answer_key: Array<{ number: number; correct_option: "A" | "B" | "C" | "D" }>;
-      citations: Citation[];
+      citations?: Citation[];
     }
   | {
       resource_kind: "slides_pack";
@@ -37,17 +37,10 @@ type ResourceOutput =
         slide_number: number;
         title: string;
         bullets: string[];
-        speaker_notes: string;
-        suggested_visual?: string;
-        check_for_understanding?: string;
+        speaker_notes?: string;
       }>;
-      teacher_appendix: {
-        starter_questions: Array<{ q: string; answer: string }>;
-        mini_whiteboard_checks: Array<{ q: string; expected: string; common_wrong?: string }>;
-        exit_ticket: { q: string; answer?: string };
-        differentiation_note: string;
-      };
-      citations: Citation[];
+      teacher_appendix: string;
+      citations?: Citation[];
     };
 
 interface ResourceOutputViewerProps {
@@ -64,18 +57,12 @@ const buildSlideText = (slide: {
   slide_number: number;
   title: string;
   bullets: string[];
-  speaker_notes: string;
-  suggested_visual?: string;
-  check_for_understanding?: string;
+  speaker_notes?: string;
 }) => {
   const lines = [`Slide ${slide.slide_number}: ${slide.title}`, ...slide.bullets.map((b) => `- ${b}`)];
-  if (slide.check_for_understanding) {
-    lines.push(`Check for understanding: ${slide.check_for_understanding}`);
+  if (slide.speaker_notes) {
+    lines.push(`Speaker notes: ${slide.speaker_notes}`);
   }
-  if (slide.suggested_visual) {
-    lines.push(`Suggested visual: ${slide.suggested_visual}`);
-  }
-  lines.push(`Speaker notes: ${slide.speaker_notes}`);
   return lines.join("\n");
 };
 
@@ -93,9 +80,7 @@ export default function ResourceOutputViewer({
       slide_number: number;
       title: string;
       bullets: string[];
-      speaker_notes: string;
-      suggested_visual?: string;
-      check_for_understanding?: string;
+      speaker_notes?: string;
     },
     index: number
   ) => {
@@ -253,20 +238,12 @@ export default function ResourceOutputViewer({
                     <li key={bullet}>{bullet}</li>
                   ))}
                 </ul>
-                {slide.check_for_understanding ? (
-                  <p className="mt-2 text-xs text-slate-600">
-                    <strong>Check for understanding:</strong> {slide.check_for_understanding}
-                  </p>
+                {slide.speaker_notes ? (
+                  <details className="mt-2 text-xs text-slate-600">
+                    <summary className="cursor-pointer font-semibold">Speaker notes</summary>
+                    <p className="mt-1 whitespace-pre-line">{slide.speaker_notes}</p>
+                  </details>
                 ) : null}
-                {slide.suggested_visual ? (
-                  <p className="mt-1 text-xs text-slate-600">
-                    <strong>Suggested visual:</strong> {slide.suggested_visual}
-                  </p>
-                ) : null}
-                <details className="mt-2 text-xs text-slate-600">
-                  <summary className="cursor-pointer font-semibold">Speaker notes</summary>
-                  <p className="mt-1 whitespace-pre-line">{slide.speaker_notes}</p>
-                </details>
                 {copiedSlideIndex === index ? (
                   <p className="mt-2 text-xs text-emerald-600">Copied!</p>
                 ) : null}
@@ -277,46 +254,9 @@ export default function ResourceOutputViewer({
             <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Teacher appendix
             </h4>
-            <div className="mt-3 space-y-3">
-              <p className="text-xs font-semibold text-slate-600">
-                {output.teacher_appendix.differentiation_note}
-              </p>
-              <div>
-                <p className="text-xs font-semibold text-slate-600">Starter questions</p>
-                <ul className="mt-1 list-disc space-y-1 pl-5">
-                  {output.teacher_appendix.starter_questions.map((item, index) => (
-                    <li key={`${item.q}-${index}`}>
-                      {item.q} — <span className="text-slate-500">{item.answer}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-600">Mini whiteboard checks</p>
-                <ul className="mt-1 list-disc space-y-1 pl-5">
-                  {output.teacher_appendix.mini_whiteboard_checks.map((item, index) => (
-                    <li key={`${item.q}-${index}`}>
-                      {item.q} — <span className="text-slate-500">{item.expected}</span>
-                      {item.common_wrong ? (
-                        <span className="text-slate-400"> (Common wrong: {item.common_wrong})</span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-600">Exit ticket</p>
-                <p className="mt-1">
-                  {output.teacher_appendix.exit_ticket.q}
-                  {output.teacher_appendix.exit_ticket.answer ? (
-                    <span className="text-slate-500">
-                      {" "}
-                      — {output.teacher_appendix.exit_ticket.answer}
-                    </span>
-                  ) : null}
-                </p>
-              </div>
-            </div>
+            <p className="mt-3 whitespace-pre-line text-sm text-slate-700">
+              {output.teacher_appendix}
+            </p>
           </div>
         </div>
       ) : null}

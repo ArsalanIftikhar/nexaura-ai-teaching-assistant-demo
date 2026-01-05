@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import OpenAI from "openai";
+import { jsonrepair } from "jsonrepair";
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
 import { retrieveCurriculumBundles } from "@/lib/curriculum/retrieve";
 import { systemPrompt } from "@/lib/prompts/system";
@@ -34,15 +35,15 @@ const LIMITS = {
 const MAX_TOKENS: Record<NonResourceMode | ResourceKind, number> = {
   lesson: 1400,
   feedback: 900,
-  worksheet: 900,
+  worksheet: 1200,
   mcq: 900,
-  slides_pack: 1300,
+  slides_pack: 1800,
 };
 
 const RESOURCE_LIMITS = {
   worksheet: { min: 6, max: 20 },
   mcq: { min: 6, max: 15 },
-  slides_pack: { min: 8, max: 18 },
+  slides_pack: { min: 10, max: 16 },
 };
 
 const normalizeClassAbility = (value: unknown) => {
@@ -263,6 +264,106 @@ const normalizeMcq = (parsed: unknown) => {
   };
 };
 
+const normalizeWorksheet = (parsed: unknown) => {
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+
+  const payload = parsed as Record<string, unknown>;
+  if (!Array.isArray(payload.questions)) {
+    return null;
+  }
+
+  const questions = payload.questions.map((question, index) => {
+    const item = (question ?? {}) as Record<string, unknown>;
+    const prompt =
+      typeof item.prompt === "string"
+        ? item.prompt
+        : typeof item.stem === "string"
+        ? item.stem
+        : typeof item.question === "string"
+        ? item.question
+        : "";
+    return {
+      number: typeof item.number === "number" ? item.number : index + 1,
+      prompt,
+      answer: typeof item.answer === "string" ? item.answer : null,
+    };
+  });
+
+  const answersFromQuestions = questions
+    .filter((question) => typeof question.answer === "string" && question.answer)
+    .map((question) => ({ number: question.number, answer: question.answer as string }));
+
+  const answersInput = Array.isArray(payload.answers) ? payload.answers : [];
+  const answersFromPayload = answersInput
+    .map((answer, index) => {
+      const item = (answer ?? {}) as Record<string, unknown>;
+      return {
+        number: typeof item.number === "number" ? item.number : index + 1,
+        answer: typeof item.answer === "string" ? item.answer : "",
+      };
+    })
+    .filter((answer) => answer.answer);
+
+  const answerMap = new Map<number, string>();
+  answersFromPayload.forEach((answer) => answerMap.set(answer.number, answer.answer));
+  answersFromQuestions.forEach((answer) => {
+    if (!answerMap.has(answer.number)) {
+      answerMap.set(answer.number, answer.answer);
+    }
+  });
+
+  return {
+    resource_kind: "worksheet",
+    title: typeof payload.title === "string" ? payload.title : "Worksheet",
+    teacher_instructions:
+      typeof payload.teacher_instructions === "string"
+        ? payload.teacher_instructions
+        : "Complete the worksheet in 20–25 minutes.",
+    questions: questions.map(({ number, prompt }) => ({ number, prompt })),
+    answers: Array.from(answerMap.entries()).map(([number, answer]) => ({
+      number,
+      answer,
+    })),
+  };
+};
+
+const parseWithJsonRepair = <T extends z.ZodTypeAny>(schema: T, value: string) => {
+  const extracted = extractJson(value) ?? value;
+  let parsed: unknown;
+  let jsonError: string | null = null;
+  let repaired = false;
+  try {
+    parsed = JSON.parse(extracted);
+  } catch (error) {
+    jsonError = String(error);
+    try {
+      const repairedJson = jsonrepair(extracted);
+      parsed = JSON.parse(repairedJson);
+      repaired = true;
+      jsonError = null;
+    } catch (repairError) {
+      jsonError = String(repairError);
+      return { data: null, parsed: null, extracted, jsonError, zodIssues: null, repaired };
+    }
+  }
+
+  const result = schema.safeParse(parsed);
+  if (result.success) {
+    return { data: result.data, parsed, extracted, jsonError: null, zodIssues: null, repaired };
+  }
+
+  return {
+    data: null,
+    parsed,
+    extracted,
+    jsonError,
+    zodIssues: result.error.issues,
+    repaired,
+  };
+};
+
 const applyFooter = (output: z.infer<typeof GenericOutputSchema>) => {
   if (output.sections.length === 0) return output;
   const updatedSections = output.sections.map((section, index) => {
@@ -310,11 +411,11 @@ const getResourceSchema = (kind: ResourceKind) => {
 
 const resourceSchemaText: Record<ResourceKind, string> = {
   worksheet:
-    "{\n  \"resource_kind\": \"worksheet\",\n  \"title\": string,\n  \"teacher_instructions\": string,\n  \"questions\": [{ \"number\": int, \"prompt\": string }],\n  \"answers\": [{ \"number\": int, \"answer\": string }],\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}",
+    "{\n  \"resource_kind\": \"worksheet\",\n  \"title\": string,\n  \"teacher_instructions\": string,\n  \"questions\": [{ \"number\": int, \"prompt\": string }],\n  \"answers\": [{ \"number\": int, \"answer\": string }]\n}",
   mcq:
     "{\n  \"resource_kind\": \"mcq\",\n  \"title\": string,\n  \"teacher_instructions\": string,\n  \"questions\": [{ \"number\": int, \"stem\": string, \"options\": [string,string,string,string], \"correct_index\": 0|1|2|3, \"explanation\": string }]\n}",
   slides_pack:
-    "{\n  \"resource_kind\": \"slides_pack\",\n  \"title\": string,\n  \"slides\": [{ \"slide_number\": int, \"title\": string, \"bullets\": [string], \"speaker_notes\": string, \"suggested_visual\"?: string, \"check_for_understanding\"?: string }],\n  \"teacher_appendix\": { \"starter_questions\": [{ \"q\": string, \"answer\": string }], \"mini_whiteboard_checks\": [{ \"q\": string, \"expected\": string, \"common_wrong\"?: string }], \"exit_ticket\": { \"q\": string, \"answer\"?: string } },\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}",
+    "{\n  \"resource_kind\": \"slides_pack\",\n  \"title\": string,\n  \"slides\": [{ \"slide_number\": int, \"title\": string, \"bullets\": [string], \"speaker_notes\"?: string }],\n  \"teacher_appendix\": string\n}",
 };
 
 export const POST = async (request: Request) => {
@@ -428,7 +529,7 @@ export const POST = async (request: Request) => {
       : null;
   let resourceCountClamped: number | null = resourceCount;
 
-  if (mode === "resource") {
+  if (mode === "resource" && normalizedResourceType !== "slides_pack") {
     if (resourceCount === null) {
       return NextResponse.json(
         { error: "Resource count is required for resources." },
@@ -689,7 +790,23 @@ Output JSON only.`;
     mode === "resource" && normalizedResourceType
       ? getResourceSchema(normalizedResourceType)
       : GenericOutputSchema;
-  let primaryParse = parseOutput(schema, content);
+  let primaryParse: ResourceOutput | z.infer<typeof GenericOutputSchema> | null = null;
+  let primaryDiagnostics:
+    | ReturnType<typeof parseWithJsonRepair>
+    | ReturnType<typeof diagnoseParse>
+    | null = null;
+  if (
+    mode === "resource" &&
+    normalizedResourceType &&
+    (normalizedResourceType === "worksheet" || normalizedResourceType === "slides_pack")
+  ) {
+    primaryDiagnostics = parseWithJsonRepair(schema, content);
+    if (primaryDiagnostics.data) {
+      primaryParse = primaryDiagnostics.data;
+    }
+  } else {
+    primaryParse = parseOutput(schema, content);
+  }
   if (mode === "resource" && normalizedResourceType === "mcq") {
     const extracted = extractJson(content) ?? content;
     try {
@@ -718,6 +835,23 @@ Output JSON only.`;
       console.error(`mcq_parse_error=${String(error)}`);
       console.error(`mcq_raw_head=${content.slice(0, 800)}`);
       console.error(`mcq_raw_tail=${content.slice(-800)}`);
+    }
+  }
+
+  if (
+    mode === "resource" &&
+    normalizedResourceType === "worksheet" &&
+    primaryDiagnostics &&
+    "parsed" in primaryDiagnostics &&
+    primaryDiagnostics.parsed &&
+    !primaryParse
+  ) {
+    const normalizedWorksheet = normalizeWorksheet(primaryDiagnostics.parsed);
+    if (normalizedWorksheet) {
+      const normalizedParse = WorksheetResourceSchema.safeParse(normalizedWorksheet);
+      if (normalizedParse.success) {
+        primaryParse = normalizedParse.data;
+      }
     }
   }
 
@@ -884,11 +1018,12 @@ Output JSON only.`;
     ) {
       const extracted = extractJson(content) ?? content;
       const schemaText = resourceSchemaText[normalizedResourceType];
-      const diagnoseResult = diagnoseParse(schema, content);
+      const diagnoseResult =
+        primaryDiagnostics && "parsed" in primaryDiagnostics
+          ? primaryDiagnostics
+          : parseWithJsonRepair(schema, content);
       if (diagnoseResult.jsonError) {
-        console.error(
-          `${normalizedResourceType}_json_error=${diagnoseResult.jsonError}`
-        );
+        console.error(`${normalizedResourceType}_json_error=${diagnoseResult.jsonError}`);
       }
       if (diagnoseResult.zodIssues) {
         console.error(
@@ -931,10 +1066,22 @@ Output JSON only.`;
 
           repairedContent = repair.choices[0]?.message?.content || "";
           repairAttempted = true;
-          const repairParse = parseOutput(schema, repairedContent);
-          if (repairParse) {
-            finalOutput = repairParse;
+          const repairDiagnostics = parseWithJsonRepair(schema, repairedContent);
+          if (repairDiagnostics.data) {
+            finalOutput = repairDiagnostics.data;
             repairUsed = true;
+          } else if (
+            normalizedResourceType === "worksheet" &&
+            repairDiagnostics.parsed
+          ) {
+            const normalizedWorksheet = normalizeWorksheet(repairDiagnostics.parsed);
+            if (normalizedWorksheet) {
+              const normalizedParse = WorksheetResourceSchema.safeParse(normalizedWorksheet);
+              if (normalizedParse.success) {
+                finalOutput = normalizedParse.data;
+                repairUsed = true;
+              }
+            }
           }
         } catch (error) {
           console.error(`${normalizedResourceType}_repair_failed`, error);
@@ -944,7 +1091,7 @@ Output JSON only.`;
       if (!finalOutput && process.env.DEBUG_GENERATION === "1") {
         const debugSource = repairAttempted ? repairedContent : extracted;
         const repairDiagnostics = repairAttempted
-          ? diagnoseParse(schema, repairedContent)
+          ? parseWithJsonRepair(schema, repairedContent)
           : diagnoseResult;
         const debugPayload = buildDebugPayload({
           jsonError: repairDiagnostics.jsonError,
@@ -1134,7 +1281,13 @@ Output JSON only.`;
 
   if (mode === "resource") {
     const resourceOutput = finalOutput as ResourceOutput;
-    const mergedCitations = mergeCitations(resourceOutput.citations ?? [], retrievedCitations);
+    const mergedCitations =
+      resourceOutput.resource_kind === "slides_pack"
+        ? []
+        : mergeCitations(
+            (resourceOutput as { citations?: Citation[] }).citations ?? [],
+            retrievedCitations
+          );
     const resourceWithDerived =
       resourceOutput.resource_kind === "mcq"
         ? {
@@ -1172,7 +1325,7 @@ Output JSON only.`;
 
     return NextResponse.json({
       ...resourceWithDerived,
-      citations: mergedCitations,
+      ...(resourceOutput.resource_kind === "slides_pack" ? {} : { citations: mergedCitations }),
       formatWarning: false,
       repairUsed,
       curriculumWarning: limitedCurriculum,

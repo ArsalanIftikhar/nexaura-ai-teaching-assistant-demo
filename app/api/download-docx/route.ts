@@ -153,21 +153,9 @@ export const POST = async (request: Request) => {
             })
           );
         });
-        if (slide.check_for_understanding) {
-          content.push(
-            new Paragraph({
-              text: `Check for understanding: ${slide.check_for_understanding}`,
-            })
-          );
+        if (slide.speaker_notes) {
+          content.push(new Paragraph({ text: `Speaker notes: ${slide.speaker_notes}` }));
         }
-        if (slide.suggested_visual) {
-          content.push(
-            new Paragraph({
-              text: `Suggested visual: ${slide.suggested_visual}`,
-            })
-          );
-        }
-        content.push(new Paragraph({ text: `Speaker notes: ${slide.speaker_notes}` }));
       });
 
       content.push(
@@ -176,34 +164,7 @@ export const POST = async (request: Request) => {
           spacing: { before: 360, after: 120 },
         })
       );
-      content.push(
-        new Paragraph({
-          text: resource.teacher_appendix.differentiation_note,
-        })
-      );
-      content.push(new Paragraph({ text: "Starter questions:" }));
-      resource.teacher_appendix.starter_questions.forEach((item, index) => {
-        content.push(new Paragraph({ text: `${index + 1}. ${item.q} — ${item.answer}` }));
-      });
-      content.push(new Paragraph({ text: "Mini whiteboard checks:" }));
-      resource.teacher_appendix.mini_whiteboard_checks.forEach((item, index) => {
-        content.push(
-          new Paragraph({
-            text: `${index + 1}. ${item.q} — ${item.expected}${
-              item.common_wrong ? ` (Common wrong: ${item.common_wrong})` : ""
-            }`,
-          })
-        );
-      });
-      content.push(
-        new Paragraph({
-          text: `Exit ticket: ${resource.teacher_appendix.exit_ticket.q}${
-            resource.teacher_appendix.exit_ticket.answer
-              ? ` — ${resource.teacher_appendix.exit_ticket.answer}`
-              : ""
-          }`,
-        })
-      );
+      content.push(new Paragraph({ text: resource.teacher_appendix }));
     }
   } else {
     const { sections } = parsed.data;

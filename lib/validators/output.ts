@@ -38,7 +38,6 @@ export const WorksheetResourceSchema = z.object({
       })
     )
     .min(1),
-  citations: z.array(CitationSchema).default([]),
 });
 
 export const McqResourceSchema = z.object({
@@ -77,36 +76,12 @@ export const SlidesPackResourceSchema = z.object({
         slide_number: z.number().int().positive(),
         title: z.string().min(1),
         bullets: z.array(z.string().min(1)).min(1),
-        speaker_notes: z.string().min(1),
-        suggested_visual: z.string().optional(),
-        check_for_understanding: z.string().optional(),
+        speaker_notes: z.string().min(1).optional(),
       })
     )
-    .min(8)
-    .max(18),
-  teacher_appendix: z.object({
-    starter_questions: z
-      .array(
-        z.object({
-          q: z.string().min(1),
-          answer: z.string().min(1),
-        })
-      )
-      .length(4),
-    mini_whiteboard_checks: z.array(
-      z.object({
-        q: z.string().min(1),
-        expected: z.string().min(1),
-        common_wrong: z.string().min(1).optional(),
-      })
-    ),
-    exit_ticket: z.object({
-      q: z.string().min(1),
-      answer: z.string().optional(),
-    }),
-    differentiation_note: z.string().min(1),
-  }),
-  citations: z.array(CitationSchema).default([]),
+    .min(10)
+    .max(16),
+  teacher_appendix: z.string().min(1),
 });
 
 export const ResourceOutputSchema = z.discriminatedUnion("resource_kind", [

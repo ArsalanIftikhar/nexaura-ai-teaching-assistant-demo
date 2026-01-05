@@ -48,16 +48,7 @@ interface SlidesPackSlide {
   slide_number: number;
   title: string;
   bullets: string[];
-  speaker_notes: string;
-  suggested_visual?: string;
-  check_for_understanding?: string;
-}
-
-interface SlidesPackAppendix {
-  starter_questions: { q: string; answer: string }[];
-  mini_whiteboard_checks: { q: string; expected: string; common_wrong?: string }[];
-  exit_ticket: { q: string; answer?: string };
-  differentiation_note: string;
+  speaker_notes?: string;
 }
 
 interface DebugInfo {
@@ -109,7 +100,7 @@ interface SlidesPackOutputState {
   resource_kind: "slides_pack";
   title: string;
   slides: SlidesPackSlide[];
-  teacher_appendix: SlidesPackAppendix;
+  teacher_appendix: string;
   citations: Citation[];
   formatWarning?: boolean;
   curriculumWarning?: boolean;
@@ -188,12 +179,6 @@ const resourceCountConfig: Record<
     max: 15,
     defaultValue: "10",
     label: "Number of questions",
-  },
-  slides_pack: {
-    min: 8,
-    max: 18,
-    defaultValue: "12",
-    label: "Number of slides",
   },
 };
 
@@ -423,8 +408,10 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
     if (activeTab === "resource") {
       const nextDefault =
         resourceCountConfig[resourceInputs.resourceType]?.defaultValue || "";
-      if (resourceInputs.questionCount !== nextDefault) {
-        setResourceInputs((prev) => ({ ...prev, questionCount: nextDefault }));
+      if (resourceInputs.resourceType !== "slides_pack") {
+        if (resourceInputs.questionCount !== nextDefault) {
+          setResourceInputs((prev) => ({ ...prev, questionCount: nextDefault }));
+        }
       }
     }
   }, [activeTab, resourceInputs.resourceType]);
@@ -443,10 +430,12 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
     label: "Number of questions",
   };
 
+  const isSlidesPack = resourceInputs.resourceType === "slides_pack";
   const questionCountValue = resourceInputs.questionCount.trim();
   const questionCountNumber = Number(questionCountValue);
   const questionCountValid =
     activeTab !== "resource" ||
+    isSlidesPack ||
     (questionCountValue.length > 0 &&
       Number.isFinite(questionCountNumber) &&
       Number.isInteger(questionCountNumber) &&
@@ -546,7 +535,9 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
               class_ability: resourceInputs.classAbility,
               curriculum_key: resourceInputs.curriculumKey,
               resource_type: resourceInputs.resourceType,
-              resource_count: questionCountNumber,
+              ...(resourceInputs.resourceType !== "slides_pack"
+                ? { resource_count: questionCountNumber }
+                : {}),
               prior_learning: resourceInputs.priorLearning,
               notes: resourceInputs.notes,
             }
@@ -615,12 +606,7 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
             resource_kind: "slides_pack",
             slides: data.slides || [],
             teacher_appendix:
-              data.teacher_appendix || {
-                starter_questions: [],
-                mini_whiteboard_checks: [],
-                exit_ticket: { q: "" },
-                differentiation_note: "Differentiation applied: Mixed",
-              },
+              data.teacher_appendix || "Differentiation applied: Mixed",
           };
         }
 
@@ -773,13 +759,17 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                   options={resourceTypeOptions}
                   onChange={(value) => setResourceInputs((prev) => ({ ...prev, resourceType: value }))}
                 />
-                <TextField
-                  id="question-count"
-                  label={countConfig.label}
-                  value={resourceInputs.questionCount}
-                  onChange={(value) => setResourceInputs((prev) => ({ ...prev, questionCount: value }))}
-                  placeholder={countConfig.defaultValue}
-                />
+                {resourceInputs.resourceType !== "slides_pack" ? (
+                  <TextField
+                    id="question-count"
+                    label={countConfig.label}
+                    value={resourceInputs.questionCount}
+                    onChange={(value) =>
+                      setResourceInputs((prev) => ({ ...prev, questionCount: value }))
+                    }
+                    placeholder={countConfig.defaultValue}
+                  />
+                ) : null}
                 <SelectField
                   id="class-ability"
                   label="Class ability"
