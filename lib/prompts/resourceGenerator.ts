@@ -77,13 +77,15 @@ export const slidesPackPrompt = `You are generating a slides content pack for te
 Slide requirements (STRICT):
 - EXACTLY 12 slides (numbered).
 - Slide 1: title/aim.
-- Slide 2: starter questions prompt (answers go in speaker notes).
+- Slide 2: starter questions prompt (EXACTLY 4 short questions based ONLY on prior learning; answers go in speaker notes).
 - Slide 3: objectives + success criteria.
 - For 60 minutes: include 2 main instruction chunks; for 90 minutes: include 3 chunks.
   Each chunk must be followed by a mini whiteboard check slide.
 - Include a slide for individual practice instructions.
 - Include a slide for marking/feedback routines.
-- Final slide is the exit ticket prompt.
+- Key Vocabulary slide must appear BEFORE any main instruction.
+- Summary/Plenary slide must appear BEFORE Exit Ticket.
+- Final slide is the exit ticket prompt (Exit Ticket must be last).
 - Bullets must be slide-ready phrases (max ~8 words each).
 - Bullets must be student-facing content (facts, definitions, examples).
 - Do NOT use planning verbs in bullets: introduce, discuss, use, ask, show, tell.
@@ -93,17 +95,19 @@ Slide requirements (STRICT):
   Expected answers:
   1) ...
   2) ...
+- MWB expected answers must be specific (actual labels/functions), not placeholders.
 - Include at least 2 main instruction chunks + AfL checks.
 - Include ONE independent practice slide (longer practice).
-- After Independent Practice, ONLY allow marking/feedback routine + exit ticket (optional brief plenary/summary). No main instruction after Independent Practice.
+- Independent practice must be anchored to the lesson topic (avoid unrelated topics).
+- After Independent Practice, ONLY allow marking/feedback routine + optional brief plenary/summary + exit ticket. No main instruction after Independent Practice.
 
 Other requirements:
 - Use Grade (not Year).
 - Apply class ability rules:
-  - Low: scaffold-heavy with worked example, sentence starters, word bank, clear modeling.
+  - Low: MUST include word bank + sentence starters + one worked example slide; independent practice uses short prompts/fill gaps; avoid "justify/explain why" unless scaffolded.
   - Medium (core pathway): standard slide structure, light scaffolding only (max one hint box OR one model sentence stem), include at least one misconception-check AfL question, no Extension/Challenge slide.
-  - High: minimal scaffolding, deeper reasoning prompts, include a dedicated Extension/Challenge slide.
-  - Mixed: core + optional challenge on the same slide, minimal scaffolds (not low-level).
+  - High: MUST include a dedicated Extension/Challenge slide; include at least 2 "justify/explain why" prompts in MWB or practice; no word bank or sentence starters.
+  - Mixed: core + optional challenge on the same slide; no full word bank or sentence starters.
 - Do NOT include worksheet/MCQ formatting.
 - If curriculum is missing, include the exact phrase: "Not found in provided curriculum documents" and proceed with safe assumptions.
 Output JSON only.`;
