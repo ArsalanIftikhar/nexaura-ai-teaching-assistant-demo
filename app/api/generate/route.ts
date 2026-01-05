@@ -124,6 +124,47 @@ const parseOutput = <T extends z.ZodTypeAny>(
   }
 };
 
+const diagnoseParse = <T extends z.ZodTypeAny>(schema: T, value: string) => {
+  const extracted = extractJson(value) ?? value;
+  let jsonError: string | null = null;
+  let zodIssues: z.ZodIssue[] | null = null;
+  let parsed: unknown = null;
+  try {
+    parsed = JSON.parse(extracted);
+    const result = schema.safeParse(parsed);
+    if (result.success) {
+      return { parsed: result.data, extracted, jsonError, zodIssues };
+    }
+    zodIssues = result.error.issues;
+  } catch (error) {
+    jsonError = String(error);
+  }
+  return { parsed: null, extracted, jsonError, zodIssues };
+};
+
+const buildDebugPayload = ({
+  jsonError,
+  zodIssues,
+  raw,
+  repairUsed,
+}: {
+  jsonError: string | null;
+  zodIssues: z.ZodIssue[] | string | null;
+  raw: string;
+  repairUsed: boolean;
+}) => ({
+  debug_json_error: jsonError,
+  debug_zod_issues:
+    zodIssues === null
+      ? null
+      : typeof zodIssues === "string"
+      ? zodIssues
+      : JSON.stringify(zodIssues),
+  debug_raw_head: raw.slice(0, 800),
+  debug_raw_tail: raw.slice(-800),
+  debug_repair_used: repairUsed,
+});
+
 const mergeCitations = (primary: Citation[], secondary: Citation[]) => {
   const map = new Map<string, Citation>();
   [...primary, ...secondary].forEach((citation) => {
@@ -757,12 +798,11 @@ Output JSON only.`;
           );
           console.error(`mcq_raw_head=${repairedContent.slice(0, 800)}`);
           console.error(`mcq_raw_tail=${repairedContent.slice(-800)}`);
-          const shouldDebug =
-            process.env.NODE_ENV !== "production" ||
-            process.env.DEBUG_GENERATION === "1";
+          const shouldDebug = process.env.DEBUG_GENERATION === "1";
           let debugPayload: Record<string, unknown> = {};
           if (shouldDebug) {
-            let parseError: unknown = null;
+            let parseError: z.ZodIssue[] | string | null = null;
+            let jsonError: string | null = null;
             try {
               const parsedRepair = JSON.parse(repairedContent);
               const normalizedRepair = normalizeMcq(parsedRepair);
@@ -770,7 +810,7 @@ Output JSON only.`;
                 const result = McqResourceSchema.safeParse(normalizedRepair.value);
                 parseError = result.success
                   ? null
-                  : JSON.stringify(result.error.issues).slice(0, 4000);
+                  : result.error.issues;
                 if (!result.success) {
                   console.error(
                     `mcq_zod_issues=${JSON.stringify(result.error.issues).slice(0, 4000)}`
@@ -781,15 +821,16 @@ Output JSON only.`;
                 console.error(`mcq_zod_issues=${normalizedRepair.error}`);
               }
             } catch (parseErr) {
-              parseError = { json_error: String(parseErr) };
+              jsonError = String(parseErr);
+              parseError = null;
               console.error(`mcq_zod_issues=${String(parseErr)}`);
             }
-            debugPayload = {
-              debug_zod_issues: parseError,
-              debug_raw_head: repairedContent.slice(0, 800),
-              debug_raw_tail: repairedContent.slice(-800),
-              debug_repair_used: mcqRepairAttempted,
-            };
+            debugPayload = buildDebugPayload({
+              jsonError,
+              zodIssues: parseError,
+              raw: repairedContent,
+              repairUsed: mcqRepairAttempted,
+            });
           }
           return NextResponse.json(
             {
@@ -803,36 +844,117 @@ Output JSON only.`;
         console.error("MCQ repair request failed", error);
         console.error(`mcq_raw_head=${extracted.slice(0, 800)}`);
         console.error(`mcq_raw_tail=${extracted.slice(-800)}`);
-        const shouldDebug =
-          process.env.NODE_ENV !== "production" ||
-          process.env.DEBUG_GENERATION === "1";
+        const shouldDebug = process.env.DEBUG_GENERATION === "1";
         let debugPayload: Record<string, unknown> = {};
         if (shouldDebug) {
-          let parseError: unknown = null;
+          let parseError: z.ZodIssue[] | string | null = null;
+          let jsonError: string | null = null;
           try {
             const parsedRepair = JSON.parse(extracted);
             const normalizedRepair = normalizeMcq(parsedRepair);
             if ("value" in normalizedRepair) {
               const result = McqResourceSchema.safeParse(normalizedRepair.value);
-              parseError = result.success
-                ? null
-                : JSON.stringify(result.error.issues).slice(0, 4000);
+              parseError = result.success ? null : result.error.issues;
             } else {
               parseError = normalizedRepair.error;
             }
           } catch (parseErr) {
-            parseError = { json_error: String(parseErr) };
+            jsonError = String(parseErr);
+            parseError = null;
           }
-          debugPayload = {
-            debug_zod_issues: parseError,
-            debug_raw_head: extracted.slice(0, 800),
-            debug_raw_tail: extracted.slice(-800),
-            debug_repair_used: mcqRepairAttempted,
-          };
+          debugPayload = buildDebugPayload({
+            jsonError,
+            zodIssues: parseError,
+            raw: extracted,
+            repairUsed: mcqRepairAttempted,
+          });
         }
         return NextResponse.json(
           {
             error: "MCQ formatting repair failed. Please try again.",
+            ...debugPayload,
+          },
+          { status: 500 }
+        );
+      }
+    } else if (
+      mode === "resource" &&
+      normalizedResourceType &&
+      (normalizedResourceType === "worksheet" || normalizedResourceType === "slides_pack")
+    ) {
+      const extracted = extractJson(content) ?? content;
+      const schemaText = resourceSchemaText[normalizedResourceType];
+      const diagnoseResult = diagnoseParse(schema, content);
+      if (diagnoseResult.jsonError) {
+        console.error(
+          `${normalizedResourceType}_json_error=${diagnoseResult.jsonError}`
+        );
+      }
+      if (diagnoseResult.zodIssues) {
+        console.error(
+          `${normalizedResourceType}_zod_issues=${JSON.stringify(
+            diagnoseResult.zodIssues
+          ).slice(0, 4000)}`
+        );
+      }
+      console.error(`${normalizedResourceType}_raw_head=${extracted.slice(0, 800)}`);
+      console.error(`${normalizedResourceType}_raw_tail=${extracted.slice(-800)}`);
+
+      let repairAttempted = false;
+      let repairedContent = "";
+      if (diagnoseResult.jsonError || diagnoseResult.zodIssues) {
+        const repairPrompt = diagnoseResult.jsonError
+          ? `Schema:\n${schemaText}\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`
+          : `Schema:\n${schemaText}\n\nZod issues:\n${JSON.stringify(
+              diagnoseResult.zodIssues
+            )}\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`;
+        const systemPromptText = diagnoseResult.jsonError
+          ? "You are a formatter. Fix invalid JSON and output STRICT JSON that matches the schema exactly."
+          : "You are a formatter. Fix the JSON to match the schema exactly and resolve the listed issues.";
+        try {
+          const repair = await openai.chat.completions.create({
+            model: process.env.MODEL_NAME || "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: systemPromptText,
+              },
+              {
+                role: "user",
+                content: repairPrompt,
+              },
+            ],
+            temperature: 0,
+            max_tokens: 800,
+            response_format: { type: "json_object" },
+          });
+
+          repairedContent = repair.choices[0]?.message?.content || "";
+          repairAttempted = true;
+          const repairParse = parseOutput(schema, repairedContent);
+          if (repairParse) {
+            finalOutput = repairParse;
+            repairUsed = true;
+          }
+        } catch (error) {
+          console.error(`${normalizedResourceType}_repair_failed`, error);
+        }
+      }
+
+      if (!finalOutput && process.env.DEBUG_GENERATION === "1") {
+        const debugSource = repairAttempted ? repairedContent : extracted;
+        const repairDiagnostics = repairAttempted
+          ? diagnoseParse(schema, repairedContent)
+          : diagnoseResult;
+        const debugPayload = buildDebugPayload({
+          jsonError: repairDiagnostics.jsonError,
+          zodIssues: repairDiagnostics.zodIssues,
+          raw: debugSource,
+          repairUsed: repairAttempted,
+        });
+        return NextResponse.json(
+          {
+            error: "Unable to format resource output. Please try again.",
             ...debugPayload,
           },
           { status: 500 }
