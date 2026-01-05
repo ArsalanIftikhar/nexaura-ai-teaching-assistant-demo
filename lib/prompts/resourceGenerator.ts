@@ -50,6 +50,12 @@ Requirements:
 - Provide 4 options per question and a correct_index.
 - Include misconception_map if possible to explain distractors.
 - Do NOT include slides, speaker notes, or slide language.
+- Schema enforcement:
+  - questions must be numbered 1..N in order.
+  - options array length must be exactly 4 for every question.
+  - correct_index must be an integer 0–3.
+  - answer_key must include every question and match the questions array.
+  - At least one distractor must reflect a common misconception related to the topic or prior learning.
 - If curriculum is missing, include the exact phrase: "Not found in provided curriculum documents" and proceed with safe assumptions.
 Output JSON only.`;
 

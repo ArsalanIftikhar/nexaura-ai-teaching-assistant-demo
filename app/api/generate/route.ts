@@ -563,11 +563,11 @@ Output JSON only.`;
             {
               role: "system",
               content:
-                "You are a formatter. Output STRICT JSON that matches the MCQ schema exactly.",
+                "You are a formatter. Output STRICT JSON that matches the MCQ schema exactly. Do not add any extra keys.",
             },
             {
               role: "user",
-              content: `Schema:\n${resourceSchemaText.mcq}\n\nRules:\n- questions array must include EXACTLY 4 options per question.\n- correct_index must be 0,1,2,or 3.\n- answer_key must include every question with correct_option A-D.\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`,
+              content: `Schema:\n${resourceSchemaText.mcq}\n\nRules:\n- questions array must be EXACTLY N items and numbered 1..N.\n- options array must include EXACTLY 4 options per question.\n- correct_index must be 0,1,2,or 3.\n- answer_key must include every question with correct_option A-D, matching questions.\n- Output ONLY the schema fields. No extra keys.\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`,
             },
           ],
           temperature: 0,
@@ -584,15 +584,54 @@ Output JSON only.`;
           console.error(
             `MCQ repair failed. Raw output: ${repairedContent.slice(0, 300)}`
           );
+          const shouldDebug =
+            process.env.NODE_ENV !== "production" ||
+            process.env.DEBUG_GENERATION === "1";
+          let debugPayload: Record<string, unknown> = {};
+          if (shouldDebug) {
+            let parseError: unknown = null;
+            try {
+              parseError = McqResourceSchema.safeParse(
+                JSON.parse(repairedContent)
+              ).error?.flatten();
+            } catch (parseErr) {
+              parseError = { json_error: String(parseErr) };
+            }
+            debugPayload = {
+              debug_mcq_excerpt: repairedContent.slice(0, 400),
+              debug_mcq_parse_error: parseError,
+            };
+          }
           return NextResponse.json(
-            { error: "Unable to format MCQ output. Please try again." },
+            {
+              error: "Unable to format MCQ output. Please try again.",
+              ...debugPayload,
+            },
             { status: 500 }
           );
         }
       } catch (error) {
         console.error("MCQ repair request failed", error);
+        const shouldDebug =
+          process.env.NODE_ENV !== "production" ||
+          process.env.DEBUG_GENERATION === "1";
+        let debugPayload: Record<string, unknown> = {};
+        if (shouldDebug) {
+          let parseError: unknown = null;
+          try {
+            parseError = McqResourceSchema.safeParse(
+              JSON.parse(extracted)
+            ).error?.flatten();
+          } catch (parseErr) {
+            parseError = { json_error: String(parseErr) };
+          }
+          debugPayload = {
+            debug_mcq_excerpt: extracted.slice(0, 400),
+            debug_mcq_parse_error: parseError,
+          };
+        }
         return NextResponse.json(
-          { error: "MCQ formatting repair failed. Please try again." },
+          { error: "MCQ formatting repair failed. Please try again.", ...debugPayload },
           { status: 500 }
         );
       }
