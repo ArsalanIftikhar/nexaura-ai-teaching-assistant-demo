@@ -567,7 +567,12 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
       });
 
       if (!response.ok) {
-        throw new Error("Unable to generate output.");
+        const errorText = await response.text();
+        const details = errorText.trim();
+        const message = details
+          ? `Unable to generate output.\n\nDetails:\n${details}`
+          : "Unable to generate output.";
+        throw new Error(message);
       }
 
       const data = await response.json();
@@ -1041,6 +1046,7 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
               currentOutput.kind === "resource" ? (
                 <ResourceOutputViewer
                   output={currentOutput}
+                  error={error}
                   formatWarning={currentOutput.formatWarning}
                   curriculumWarning={currentOutput.curriculumWarning}
                   message={currentOutput.message}

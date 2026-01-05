@@ -58,9 +58,19 @@ export default function OutputViewer({
   const [copiedSlideIndex, setCopiedSlideIndex] = useState<number | null>(null);
 
   if (error) {
+    const [summary, ...detailLines] = error.split("\n");
+    const detailText = detailLines.join("\n").trim();
     return (
       <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        {error}
+        <p className="font-semibold text-red-700">{summary}</p>
+        {detailText ? (
+          <details className="mt-2 text-xs text-red-700">
+            <summary className="cursor-pointer font-semibold">Details</summary>
+            <pre className="mt-2 whitespace-pre-wrap text-xs text-red-700">
+              {detailText}
+            </pre>
+          </details>
+        ) : null}
       </div>
     );
   }

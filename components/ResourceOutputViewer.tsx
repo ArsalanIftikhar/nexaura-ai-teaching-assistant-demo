@@ -51,6 +51,7 @@ type ResourceOutput =
 
 interface ResourceOutputViewerProps {
   output: ResourceOutput;
+  error?: string | null;
   formatWarning?: boolean;
   curriculumWarning?: boolean;
   message?: string | null;
@@ -79,6 +80,7 @@ const buildSlideText = (slide: {
 
 export default function ResourceOutputViewer({
   output,
+  error,
   formatWarning,
   curriculumWarning,
   message,
@@ -109,6 +111,25 @@ export default function ResourceOutputViewer({
 
   return (
     <div className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      {error ? (
+        (() => {
+          const [summary, ...detailLines] = error.split("\n");
+          const detailText = detailLines.join("\n").trim();
+          return (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <p className="font-semibold text-red-700">{summary}</p>
+              {detailText ? (
+                <details className="mt-2 text-xs text-red-700">
+                  <summary className="cursor-pointer font-semibold">Details</summary>
+                  <pre className="mt-2 whitespace-pre-wrap text-xs text-red-700">
+                    {detailText}
+                  </pre>
+                </details>
+              ) : null}
+            </div>
+          );
+        })()
+      ) : null}
       {formatWarning || message ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
           {message ||

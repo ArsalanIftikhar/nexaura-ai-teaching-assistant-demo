@@ -548,38 +548,88 @@ Output JSON only.`;
   if (primaryParse) {
     finalOutput = primaryParse;
   } else {
-    const extracted = extractJson(content) ?? content;
-    const schemaText =
-      mode === "resource" && normalizedResourceType
-        ? resourceSchemaText[normalizedResourceType]
-        : "{\n  \"title\": string,\n  \"sections\": [{ \"heading\": string, \"content\": string }],\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}";
-    try {
-      const repair = await openai.chat.completions.create({
-        model: process.env.MODEL_NAME || "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a formatter. Convert the input into STRICT JSON that matches the schema exactly.",
-          },
-          {
-            role: "user",
-            content: `Schema:\n${schemaText}\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`,
-          },
-        ],
-        temperature: 0,
-        max_tokens: 800,
-        response_format: { type: "json_object" },
-      });
+    const schemaLabel =
+      mode === "resource" ? `resource:${normalizedResourceType ?? "unknown"}` : mode;
+    console.error(
+      `Parse failed for ${schemaLabel}. Raw output: ${content.slice(0, 300)}`
+    );
 
-      const repairedContent = repair.choices[0]?.message?.content || "";
-      const repairParse = parseOutput(schema, repairedContent);
-      if (repairParse) {
-        finalOutput = repairParse;
-        repairUsed = true;
+    if (mode === "resource" && normalizedResourceType === "mcq") {
+      const extracted = extractJson(content) ?? content;
+      try {
+        const mcqRepair = await openai.chat.completions.create({
+          model: process.env.MODEL_NAME || "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a formatter. Output STRICT JSON that matches the MCQ schema exactly.",
+            },
+            {
+              role: "user",
+              content: `Schema:\n${resourceSchemaText.mcq}\n\nRules:\n- questions array must include EXACTLY 4 options per question.\n- correct_index must be 0,1,2,or 3.\n- answer_key must include every question with correct_option A-D.\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`,
+            },
+          ],
+          temperature: 0,
+          max_tokens: 800,
+          response_format: { type: "json_object" },
+        });
+
+        const repairedContent = mcqRepair.choices[0]?.message?.content || "";
+        const repairParse = parseOutput(McqResourceSchema, repairedContent);
+        if (repairParse) {
+          finalOutput = repairParse;
+          repairUsed = true;
+        } else {
+          console.error(
+            `MCQ repair failed. Raw output: ${repairedContent.slice(0, 300)}`
+          );
+          return NextResponse.json(
+            { error: "Unable to format MCQ output. Please try again." },
+            { status: 500 }
+          );
+        }
+      } catch (error) {
+        console.error("MCQ repair request failed", error);
+        return NextResponse.json(
+          { error: "MCQ formatting repair failed. Please try again." },
+          { status: 500 }
+        );
       }
-    } catch (error) {
-      console.error("Repair request failed", error);
+    } else {
+      const extracted = extractJson(content) ?? content;
+      const schemaText =
+        mode === "resource" && normalizedResourceType
+          ? resourceSchemaText[normalizedResourceType]
+          : "{\n  \"title\": string,\n  \"sections\": [{ \"heading\": string, \"content\": string }],\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}";
+      try {
+        const repair = await openai.chat.completions.create({
+          model: process.env.MODEL_NAME || "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a formatter. Convert the input into STRICT JSON that matches the schema exactly.",
+            },
+            {
+              role: "user",
+              content: `Schema:\n${schemaText}\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`,
+            },
+          ],
+          temperature: 0,
+          max_tokens: 800,
+          response_format: { type: "json_object" },
+        });
+
+        const repairedContent = repair.choices[0]?.message?.content || "";
+        const repairParse = parseOutput(schema, repairedContent);
+        if (repairParse) {
+          finalOutput = repairParse;
+          repairUsed = true;
+        }
+      } catch (error) {
+        console.error("Repair request failed", error);
+      }
     }
   }
 
