@@ -435,7 +435,7 @@ const resourceSchemaText: Record<ResourceKind, string> = {
   mcq:
     "{\n  \"resource_kind\": \"mcq\",\n  \"title\": string,\n  \"teacher_instructions\": string,\n  \"questions\": [{ \"number\": int, \"stem\": string, \"options\": [string,string,string,string], \"correct_index\": 0|1|2|3, \"explanation\": string }]\n}",
   slides_pack:
-    "{\n  \"resource_kind\": \"slides_pack\",\n  \"title\": string,\n  \"slides\": [{ \"slide_number\": int, \"title\": string, \"bullets\": [string], \"speaker_notes\"?: string }],\n  \"teacher_appendix\": string\n}",
+    "{\n  \"resource_kind\": \"slides_pack\",\n  \"title\": string,\n  \"slides\": [{ \"slide_number\": int, \"title\": string, \"bullets\": [string], \"speaker_notes\"?: string }]\n}",
 };
 
 export const POST = async (request: Request) => {

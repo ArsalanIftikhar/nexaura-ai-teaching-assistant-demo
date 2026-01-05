@@ -39,7 +39,6 @@ type ResourceOutput =
         bullets: string[];
         speaker_notes?: string;
       }>;
-      teacher_appendix: string;
       citations?: Citation[];
     };
 
@@ -249,14 +248,6 @@ export default function ResourceOutputViewer({
                 ) : null}
               </div>
             ))}
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Teacher appendix
-            </h4>
-            <p className="mt-3 whitespace-pre-line text-sm text-slate-700">
-              {output.teacher_appendix}
-            </p>
           </div>
         </div>
       ) : null}

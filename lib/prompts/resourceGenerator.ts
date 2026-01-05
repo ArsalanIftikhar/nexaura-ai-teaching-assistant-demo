@@ -71,14 +71,13 @@ export const slidesPackPrompt = `You are generating a slides content pack for te
       "bullets": [string],
       "speaker_notes"?: string
     }
-  ],
-  "teacher_appendix": string
+  ]
 }
 
 Slide requirements (STRICT):
 - EXACTLY 12 slides (numbered).
 - Slide 1: title/aim.
-- Slide 2: starter questions prompt (answers go to appendix).
+- Slide 2: starter questions prompt (answers go in speaker notes).
 - Slide 3: objectives + success criteria.
 - For 60 minutes: include 2 main instruction chunks; for 90 minutes: include 3 chunks.
   Each chunk must be followed by a mini whiteboard check slide.
@@ -86,15 +85,17 @@ Slide requirements (STRICT):
 - Include a slide for marking/feedback routines.
 - Final slide is the exit ticket prompt.
 - Bullets must be slide-ready phrases (max ~8 words each).
-- Teacher actions and questions must be in speaker_notes, not bullets.
-- Speaker notes ONLY for instruction, AfL, practice, and exit slides (not on title/objectives/keywords).
-
-Teacher appendix (STRICT):
-- Provide a single string that contains:
-  - Starter questions (EXACTLY 4) with answers, based ONLY on prior_learning + starter curriculum excerpts.
-  - Mini whiteboard checks (short diagnostic checks aligned to misconceptions).
-  - Exit ticket (1 question + answer if objective).
-  - The exact line "Differentiation applied: <Low|Medium|High|Mixed>".
+- Bullets must be student-facing content (facts, definitions, examples).
+- Do NOT use planning verbs in bullets: introduce, discuss, use, ask, show, tell.
+- Planning/teacher actions must be in speaker_notes only.
+- Speaker notes ONLY for starter, instruction, AfL, practice, and exit slides (not on title/objectives/keywords).
+- Starter/MWB/Exit speaker notes MUST include:
+  Expected answers:
+  1) ...
+  2) ...
+- Include at least 2 main instruction chunks + AfL checks.
+- Include ONE independent practice slide (longer practice).
+- After Independent Practice, ONLY allow marking/feedback routine + exit ticket (optional brief plenary/summary). No main instruction after Independent Practice.
 
 Other requirements:
 - Use Grade (not Year).

@@ -38,7 +38,6 @@ interface DownloadButtonProps {
       bullets: string[];
       speaker_notes?: string;
     }>;
-    teacher_appendix?: string;
   };
 }
 

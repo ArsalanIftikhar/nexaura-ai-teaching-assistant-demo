@@ -157,14 +157,6 @@ export const POST = async (request: Request) => {
           content.push(new Paragraph({ text: `Speaker notes: ${slide.speaker_notes}` }));
         }
       });
-
-      content.push(
-        new Paragraph({
-          children: [new TextRun({ text: "Teacher appendix", bold: true, size: 24 })],
-          spacing: { before: 360, after: 120 },
-        })
-      );
-      content.push(new Paragraph({ text: resource.teacher_appendix }));
     }
   } else {
     const { sections } = parsed.data;

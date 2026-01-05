@@ -100,7 +100,6 @@ interface SlidesPackOutputState {
   resource_kind: "slides_pack";
   title: string;
   slides: SlidesPackSlide[];
-  teacher_appendix: string;
   citations: Citation[];
   formatWarning?: boolean;
   curriculumWarning?: boolean;
@@ -605,8 +604,6 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
             ...base,
             resource_kind: "slides_pack",
             slides: data.slides || [],
-            teacher_appendix:
-              data.teacher_appendix || "Differentiation applied: Mixed",
           };
         }
 
@@ -1022,10 +1019,6 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                           slides:
                             currentOutput.resource_kind === "slides_pack"
                               ? currentOutput.slides
-                              : undefined,
-                          teacher_appendix:
-                            currentOutput.resource_kind === "slides_pack"
-                              ? currentOutput.teacher_appendix
                               : undefined,
                         }
                       : undefined

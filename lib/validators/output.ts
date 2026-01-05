@@ -81,7 +81,6 @@ export const SlidesPackResourceSchema = z.object({
     )
     .min(10)
     .max(16),
-  teacher_appendix: z.string().min(1),
 });
 
 export const ResourceOutputSchema = z.discriminatedUnion("resource_kind", [
