@@ -29,7 +29,6 @@ interface DownloadButtonProps {
       options?: [string, string, string, string];
       correct_index?: number;
       misconception_map?: [string, string, string, string];
-      marks?: number;
     }>;
     answers?: Array<{ number: number; answer: string }>;
     answer_key?: Array<{ number: number; correct_option: "A" | "B" | "C" | "D" }>;

@@ -24,7 +24,6 @@ interface Citation {
 interface WorksheetQuestion {
   number: number;
   prompt: string;
-  marks?: number;
 }
 
 interface WorksheetAnswer {

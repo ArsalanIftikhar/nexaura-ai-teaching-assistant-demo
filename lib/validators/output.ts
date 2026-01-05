@@ -27,7 +27,6 @@ export const WorksheetResourceSchema = z.object({
       z.object({
         number: z.number().int().positive(),
         prompt: z.string().min(1),
-        marks: z.number().int().positive().optional(),
       })
     )
     .min(1),

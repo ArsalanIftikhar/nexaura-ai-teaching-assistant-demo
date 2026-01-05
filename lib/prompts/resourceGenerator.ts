@@ -3,7 +3,7 @@ export const worksheetPrompt = `You are generating a worksheet. Output MUST be v
   "resource_kind": "worksheet",
   "title": string,
   "teacher_instructions": string,
-  "questions": [{ "number": int, "prompt": string, "marks"?: int }],
+  "questions": [{ "number": int, "prompt": string }],
   "answers": [{ "number": int, "answer": string }],
   "citations": [{ "source": string, "excerpt": string }]
 }

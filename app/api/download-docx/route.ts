@@ -81,9 +81,7 @@ export const POST = async (request: Request) => {
       resource.questions.forEach((question) => {
         content.push(
           new Paragraph({
-            text: `${question.number}. ${question.prompt}${
-              question.marks ? ` (${question.marks} marks)` : ""
-            }`,
+            text: `${question.number}. ${question.prompt}`,
           })
         );
       });

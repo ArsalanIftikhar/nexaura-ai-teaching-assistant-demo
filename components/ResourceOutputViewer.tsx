@@ -12,7 +12,7 @@ type ResourceOutput =
       resource_kind: "worksheet";
       title: string;
       teacher_instructions: string;
-      questions: Array<{ number: number; prompt: string; marks?: number }>;
+      questions: Array<{ number: number; prompt: string }>;
       answers: Array<{ number: number; answer: string }>;
       citations: Citation[];
     }
@@ -139,9 +139,6 @@ export default function ResourceOutputViewer({
               {output.questions.map((question) => (
                 <li key={question.number}>
                   {question.prompt}
-                  {question.marks ? (
-                    <span className="ml-2 text-xs text-slate-500">({question.marks} marks)</span>
-                  ) : null}
                 </li>
               ))}
             </ol>

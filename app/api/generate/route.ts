@@ -62,7 +62,6 @@ const requestSchema = z.object({
   prior_learning: z.string().optional().default(""),
   resource_type: z.string().optional().default(""),
   resource_count: z.coerce.number().int().optional(),
-  number_questions: z.coerce.number().int().optional(),
   assessment_type: z.string().optional().default(""),
   total_marks: z.string().optional().default(""),
   rubric: z.string().optional().default(""),
@@ -172,7 +171,7 @@ const getResourceSchema = (kind: ResourceKind) => {
 
 const resourceSchemaText: Record<ResourceKind, string> = {
   worksheet:
-    "{\n  \"resource_kind\": \"worksheet\",\n  \"title\": string,\n  \"teacher_instructions\": string,\n  \"questions\": [{ \"number\": int, \"prompt\": string, \"marks\"?: int }],\n  \"answers\": [{ \"number\": int, \"answer\": string }],\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}",
+    "{\n  \"resource_kind\": \"worksheet\",\n  \"title\": string,\n  \"teacher_instructions\": string,\n  \"questions\": [{ \"number\": int, \"prompt\": string }],\n  \"answers\": [{ \"number\": int, \"answer\": string }],\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}",
   mcq:
     "{\n  \"resource_kind\": \"mcq\",\n  \"title\": string,\n  \"teacher_instructions\": string,\n  \"questions\": [{ \"number\": int, \"stem\": string, \"options\": [string,string,string,string], \"correct_index\": 0|1|2|3, \"misconception_map\"?: [string,string,string,string] }],\n  \"answer_key\": [{ \"number\": int, \"correct_option\": \"A\"|\"B\"|\"C\"|\"D\" }],\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}",
   slides_pack:
@@ -226,7 +225,6 @@ export const POST = async (request: Request) => {
     prior_learning,
     resource_type,
     resource_count,
-    number_questions,
     assessment_type,
     total_marks,
     rubric,
@@ -284,7 +282,7 @@ export const POST = async (request: Request) => {
     );
   }
 
-  const resourceCountRaw = resource_count ?? number_questions;
+  const resourceCountRaw = resource_count;
   const resourceCount =
     mode === "resource" && resourceCountRaw !== undefined && resourceCountRaw !== null
       ? Number(resourceCountRaw)
@@ -589,6 +587,91 @@ Output JSON only.`;
     source: snippet.source,
     excerpt: snippet.text,
   }));
+
+  if (
+    mode === "resource" &&
+    normalizedResourceType === "worksheet" &&
+    resourceCountClamped !== null &&
+    finalOutput &&
+    (finalOutput as ResourceOutput).resource_kind === "worksheet"
+  ) {
+    const worksheetOutput = finalOutput as z.infer<typeof WorksheetResourceSchema>;
+    const targetCount = resourceCountClamped;
+    const existingQuestions = worksheetOutput.questions ?? [];
+    const existingAnswers = worksheetOutput.answers ?? [];
+
+    let adjustedQuestions = existingQuestions.slice(0, targetCount);
+    let adjustedAnswers = existingAnswers.slice(0, targetCount);
+
+    if (adjustedQuestions.length < targetCount) {
+      const missingCount = targetCount - adjustedQuestions.length;
+      const repairPrompt = `Add ${missingCount} NEW worksheet questions and answers to reach exactly ${targetCount} total.\n\nExisting questions:\n${adjustedQuestions
+        .map((q) => `${q.number}. ${q.prompt}`)
+        .join("\n")}\n\nExisting answers:\n${adjustedAnswers
+        .map((a) => `${a.number}. ${a.answer}`)
+        .join("\n")}\n\nOutput ONLY JSON matching this schema:\n{\n  \"resource_kind\": \"worksheet\",\n  \"questions\": [{ \"number\": int, \"prompt\": string }],\n  \"answers\": [{ \"number\": int, \"answer\": string }]\n}`;
+
+      try {
+        const repair = await openai.chat.completions.create({
+          model: process.env.MODEL_NAME || "gpt-4o-mini",
+          messages: [
+            { role: "system", content: "You are a formatter that adds missing items only." },
+            { role: "user", content: repairPrompt },
+          ],
+          temperature: 0,
+          max_tokens: 600,
+          response_format: { type: "json_object" },
+        });
+
+        const repairContent = repair.choices[0]?.message?.content || "";
+        const repairSchema = z.object({
+          resource_kind: z.literal("worksheet"),
+          questions: z.array(
+            z.object({
+              number: z.number().int().positive(),
+              prompt: z.string().min(1),
+            })
+          ),
+          answers: z.array(
+            z.object({
+              number: z.number().int().positive(),
+              answer: z.string().min(1),
+            })
+          ),
+        });
+
+        const repairParsed = parseOutput(repairSchema, repairContent);
+        if (repairParsed) {
+          const newQuestions = repairParsed.questions.slice(0, missingCount);
+          const newAnswers = repairParsed.answers.slice(0, missingCount);
+          const startNumber = adjustedQuestions.length + 1;
+
+          adjustedQuestions = [
+            ...adjustedQuestions,
+            ...newQuestions.map((q, index) => ({
+              number: startNumber + index,
+              prompt: q.prompt,
+            })),
+          ];
+          adjustedAnswers = [
+            ...adjustedAnswers,
+            ...newAnswers.map((a, index) => ({
+              number: startNumber + index,
+              answer: a.answer,
+            })),
+          ];
+        }
+      } catch (error) {
+        console.error("Worksheet repair failed", error);
+      }
+    }
+
+    finalOutput = {
+      ...worksheetOutput,
+      questions: adjustedQuestions.slice(0, targetCount),
+      answers: adjustedAnswers.slice(0, targetCount),
+    };
+  }
 
   if (!finalOutput) {
     if (schoolId) {
