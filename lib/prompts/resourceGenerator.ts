@@ -32,30 +32,27 @@ export const mcqPrompt = `You are generating an MCQ quiz. Output MUST be valid J
       "stem": string,
       "options": [string, string, string, string],
       "correct_index": 0|1|2|3,
-      "misconception_map"?: [string, string, string, string]
+      "explanation": string
     }
-  ],
-  "answer_key": [{ "number": int, "correct_option": "A"|"B"|"C"|"D" }],
-  "citations": [{ "source": string, "excerpt": string }]
+  ]
 }
 
 Requirements:
 - EXACTLY N MCQs (use the provided count).
-- Teacher instructions MUST say the quiz should take 10–15 minutes max.
+- Teacher instructions MUST be short and say the quiz should take 10–15 minutes max.
 - Use Grade (not Year).
 - Apply class ability rules:
   - Low: 70/25/5, step-by-step guidance, sentence starters, more examples.
   - Mixed: 50/35/15 balanced mix.
   - High: 30/40/30, fewer hints, deeper reasoning, extension prompts.
 - Provide 4 options per question and a correct_index.
-- Include misconception_map if possible to explain distractors.
-- Do NOT include slides, speaker notes, or slide language.
+- Each question must include a one-sentence explanation.
+- At least one incorrect option should reflect a common misconception about the topic or prior learning.
+- Do NOT include citations, answer_key, misconception_map, or any extra keys.
 - Schema enforcement:
   - questions must be numbered 1..N in order.
   - options array length must be exactly 4 for every question.
   - correct_index must be an integer 0–3.
-  - answer_key must include every question and match the questions array.
-  - At least one distractor must reflect a common misconception related to the topic or prior learning.
 - If curriculum is missing, include the exact phrase: "Not found in provided curriculum documents" and proceed with safe assumptions.
 Output JSON only.`;
 

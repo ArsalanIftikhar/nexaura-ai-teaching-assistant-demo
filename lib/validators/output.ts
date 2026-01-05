@@ -52,7 +52,7 @@ export const McqResourceSchema = z.object({
         stem: z.string().min(1),
         options: z.array(z.string().min(1)).length(4),
         correct_index: z.number().int().min(0).max(3),
-        misconception_map: z.array(z.string().min(1)).length(4).optional(),
+        explanation: z.string().min(1),
       })
     )
     .min(1),
@@ -63,8 +63,9 @@ export const McqResourceSchema = z.object({
         correct_option: z.enum(["A", "B", "C", "D"]),
       })
     )
-    .min(1),
-  citations: z.array(CitationSchema).default([]),
+    .optional()
+    .default([]),
+  citations: z.array(CitationSchema).optional().default([]),
 });
 
 export const SlidesPackResourceSchema = z.object({

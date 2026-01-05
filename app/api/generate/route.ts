@@ -171,15 +171,19 @@ const normalizeMcq = (parsed: unknown) => {
       const map: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 };
       if (letter in map) correctIndex = map[letter];
     }
+    if (correctIndex === null || correctIndex < 0 || correctIndex > 3) {
+      return { error: "MCQ correct_index must be 0-3." };
+    }
 
     return {
       number: index + 1,
       stem: stemValue,
       options: options.slice(0, 4),
       correct_index: correctIndex,
-      misconception_map: Array.isArray(item.misconception_map)
-        ? item.misconception_map.map((value) => String(value))
-        : undefined,
+      explanation:
+        typeof item.explanation === "string"
+          ? item.explanation
+          : "Explanation unavailable.",
     };
   });
 
@@ -190,32 +194,6 @@ const normalizeMcq = (parsed: unknown) => {
     return { error: errorItem.error };
   }
 
-  const answerKeyRaw = payload.answer_key;
-  const answerKey =
-    Array.isArray(answerKeyRaw) && answerKeyRaw.length
-      ? answerKeyRaw.map((entry, index) => {
-          const record = (entry ?? {}) as Record<string, unknown>;
-          const correctOption =
-            typeof record.correct_option === "string"
-              ? record.correct_option.trim().toUpperCase()
-              : "";
-          return {
-            number: index + 1,
-            correct_option: correctOption,
-          };
-        })
-      : normalizedQuestions.map((question, index) => {
-          const letters = ["A", "B", "C", "D"] as const;
-          const correctOption =
-            typeof question.correct_index === "number"
-              ? letters[question.correct_index]
-              : "A";
-          return {
-            number: index + 1,
-            correct_option: correctOption,
-          };
-        });
-
   return {
     value: {
       resource_kind: "mcq",
@@ -225,8 +203,8 @@ const normalizeMcq = (parsed: unknown) => {
           ? payload.teacher_instructions
           : "Complete this quiz in 10–15 minutes.",
       questions: normalizedQuestions,
-      answer_key: answerKey,
-      citations: Array.isArray(payload.citations) ? payload.citations : [],
+      answer_key: [],
+      citations: [],
     },
   };
 };
@@ -280,7 +258,7 @@ const resourceSchemaText: Record<ResourceKind, string> = {
   worksheet:
     "{\n  \"resource_kind\": \"worksheet\",\n  \"title\": string,\n  \"teacher_instructions\": string,\n  \"questions\": [{ \"number\": int, \"prompt\": string }],\n  \"answers\": [{ \"number\": int, \"answer\": string }],\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}",
   mcq:
-    "{\n  \"resource_kind\": \"mcq\",\n  \"title\": string,\n  \"teacher_instructions\": string,\n  \"questions\": [{ \"number\": int, \"stem\": string, \"options\": [string,string,string,string], \"correct_index\": 0|1|2|3, \"misconception_map\"?: [string,string,string,string] }],\n  \"answer_key\": [{ \"number\": int, \"correct_option\": \"A\"|\"B\"|\"C\"|\"D\" }],\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}",
+    "{\n  \"resource_kind\": \"mcq\",\n  \"title\": string,\n  \"teacher_instructions\": string,\n  \"questions\": [{ \"number\": int, \"stem\": string, \"options\": [string,string,string,string], \"correct_index\": 0|1|2|3, \"explanation\": string }]\n}",
   slides_pack:
     "{\n  \"resource_kind\": \"slides_pack\",\n  \"title\": string,\n  \"slides\": [{ \"slide_number\": int, \"title\": string, \"bullets\": [string], \"speaker_notes\": string, \"suggested_visual\"?: string, \"check_for_understanding\"?: string }],\n  \"teacher_appendix\": { \"starter_questions\": [{ \"q\": string, \"answer\": string }], \"mini_whiteboard_checks\": [{ \"q\": string, \"expected\": string, \"common_wrong\"?: string }], \"exit_ticket\": { \"q\": string, \"answer\"?: string } },\n  \"citations\": [{ \"source\": string, \"excerpt\": string }]\n}",
 };
@@ -570,6 +548,13 @@ export const POST = async (request: Request) => {
     refine_request ? `- Refinement request: ${refine_request}` : null,
   ].filter(Boolean);
 
+  const mcqMaxTokens =
+    mode === "resource" &&
+    normalizedResourceType === "mcq" &&
+    typeof resourceCountClamped === "number"
+      ? Math.min(4000, 900 + 220 * resourceCountClamped)
+      : null;
+
   const basePrompt =
     mode === "resource" && normalizedResourceType
       ? resourcePrompts[normalizedResourceType]
@@ -593,6 +578,9 @@ Output JSON only.`;
   const resolveMaxTokens = () => {
     if (mode === "resource") {
       const kind: ResourceKind = normalizedResourceType ?? "worksheet";
+      if (kind === "mcq" && mcqMaxTokens) {
+        return mcqMaxTokens;
+      }
       return MAX_TOKENS[kind];
     }
     const nonResourceMode: NonResourceMode = mode;
@@ -693,18 +681,24 @@ Output JSON only.`;
 
     if (mode === "resource" && normalizedResourceType === "mcq") {
       const extracted = extractJson(content) ?? content;
+      let mcqRepairAttempted = false;
       try {
-        const parsedOriginal = JSON.parse(extracted);
-        const normalizedOriginal = normalizeMcq(parsedOriginal);
-        const mcqIssueSummary =
-          "value" in normalizedOriginal
-            ? (() => {
-                const result = McqResourceSchema.safeParse(normalizedOriginal.value);
-                return result.success
-                  ? ""
-                  : JSON.stringify(result.error.issues).slice(0, 4000);
-              })()
-            : normalizedOriginal.error;
+        let mcqIssueSummary = "";
+        try {
+          const parsedOriginal = JSON.parse(extracted);
+          const normalizedOriginal = normalizeMcq(parsedOriginal);
+          mcqIssueSummary =
+            "value" in normalizedOriginal
+              ? (() => {
+                  const result = McqResourceSchema.safeParse(normalizedOriginal.value);
+                  return result.success
+                    ? ""
+                    : JSON.stringify(result.error.issues).slice(0, 4000);
+                })()
+              : normalizedOriginal.error;
+        } catch (parseErr) {
+          mcqIssueSummary = `json_error: ${String(parseErr)}`;
+        }
 
         const mcqRepair = await openai.chat.completions.create({
           model: process.env.MODEL_NAME || "gpt-4o-mini",
@@ -716,7 +710,7 @@ Output JSON only.`;
             },
             {
               role: "user",
-              content: `Schema:\n${resourceSchemaText.mcq}\n\nRules:\n- questions array must be EXACTLY N items and numbered 1..N.\n- options array must include EXACTLY 4 options per question.\n- correct_index must be 0,1,2,or 3.\n- answer_key must include every question with correct_option A-D, matching questions.\n- Output ONLY the schema fields. No extra keys.\n\nZod issues:\n${mcqIssueSummary || "none"}\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`,
+              content: `Schema:\n${resourceSchemaText.mcq}\n\nRules:\n- questions array must be EXACTLY N items and numbered 1..N.\n- options array must include EXACTLY 4 options per question.\n- correct_index must be 0,1,2,or 3.\n- each question must include a one-sentence explanation.\n- Output ONLY the schema fields. No extra keys.\n\nZod issues:\n${mcqIssueSummary || "none"}\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`,
             },
           ],
           temperature: 0,
@@ -725,10 +719,11 @@ Output JSON only.`;
         });
 
         const repairedContent = mcqRepair.choices[0]?.message?.content || "";
+        mcqRepairAttempted = true;
         let repairParse = parseOutput(McqResourceSchema, repairedContent);
         if (!repairParse) {
-          const parsedRepair = parseOutput(z.any(), repairedContent);
-          if (parsedRepair) {
+          try {
+            const parsedRepair = JSON.parse(repairedContent);
             const normalizedRepair = normalizeMcq(parsedRepair);
             if ("value" in normalizedRepair) {
               repairParse = parseOutput(
@@ -736,6 +731,8 @@ Output JSON only.`;
                 JSON.stringify(normalizedRepair.value)
               );
             }
+          } catch (parseErr) {
+            console.error(`mcq_parse_error=${String(parseErr)}`);
           }
         }
         if (repairParse) {
@@ -778,7 +775,7 @@ Output JSON only.`;
               debug_zod_issues: parseError,
               debug_raw_head: repairedContent.slice(0, 800),
               debug_raw_tail: repairedContent.slice(-800),
-              debug_repair_used: true,
+              debug_repair_used: mcqRepairAttempted,
             };
           }
           return NextResponse.json(
@@ -817,7 +814,7 @@ Output JSON only.`;
             debug_zod_issues: parseError,
             debug_raw_head: extracted.slice(0, 800),
             debug_raw_tail: extracted.slice(-800),
-            debug_repair_used: false,
+            debug_repair_used: mcqRepairAttempted,
           };
         }
         return NextResponse.json(
@@ -1003,6 +1000,25 @@ Output JSON only.`;
   if (mode === "resource") {
     const resourceOutput = finalOutput as ResourceOutput;
     const mergedCitations = mergeCitations(resourceOutput.citations ?? [], retrievedCitations);
+    const resourceWithDerived =
+      resourceOutput.resource_kind === "mcq"
+        ? {
+            ...resourceOutput,
+            answer_key: resourceOutput.questions.map((question, index) => {
+              const letters = ["A", "B", "C", "D"] as const;
+              const correctOption =
+                typeof question.correct_index === "number" &&
+                question.correct_index >= 0 &&
+                question.correct_index <= 3
+                  ? letters[question.correct_index]
+                  : "A";
+              return {
+                number: question.number ?? index + 1,
+                correct_option: correctOption,
+              };
+            }),
+          }
+        : resourceOutput;
     if (schoolId) {
       await logUsageSafely({
         schoolId,
@@ -1020,7 +1036,7 @@ Output JSON only.`;
     }
 
     return NextResponse.json({
-      ...resourceOutput,
+      ...resourceWithDerived,
       citations: mergedCitations,
       formatWarning: false,
       repairUsed,

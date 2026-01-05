@@ -25,7 +25,7 @@ type ResourceOutput =
         stem: string;
         options: [string, string, string, string];
         correct_index: number;
-        misconception_map?: [string, string, string, string];
+        explanation: string;
       }>;
       answer_key: Array<{ number: number; correct_option: "A" | "B" | "C" | "D" }>;
       citations: Citation[];
@@ -197,6 +197,9 @@ export default function ResourceOutputViewer({
                     <li key={`${question.number}-${index}`}>{option}</li>
                   ))}
                 </ol>
+                <p className="mt-2 text-xs text-slate-600">
+                  <strong>Explanation:</strong> {question.explanation}
+                </p>
               </div>
             ))}
           </div>

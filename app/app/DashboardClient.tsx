@@ -36,7 +36,7 @@ interface McqQuestion {
   stem: string;
   options: [string, string, string, string];
   correct_index: number;
-  misconception_map?: [string, string, string, string];
+  explanation: string;
 }
 
 interface McqAnswerKeyEntry {

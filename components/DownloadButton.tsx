@@ -22,14 +22,14 @@ interface DownloadButtonProps {
     resource_kind: "worksheet" | "mcq" | "slides_pack";
     title: string;
     teacher_instructions?: string;
-    questions?: Array<{
-      number: number;
-      prompt?: string;
-      stem?: string;
-      options?: [string, string, string, string];
-      correct_index?: number;
-      misconception_map?: [string, string, string, string];
-    }>;
+      questions?: Array<{
+        number: number;
+        prompt?: string;
+        stem?: string;
+        options?: [string, string, string, string];
+        correct_index?: number;
+        explanation?: string;
+      }>;
     answers?: Array<{ number: number; answer: string }>;
     answer_key?: Array<{ number: number; correct_option: "A" | "B" | "C" | "D" }>;
     slides?: Array<{
