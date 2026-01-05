@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import DashboardClient from "./DashboardClient";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 export default async function AppPage() {
   const supabase = await createSupabaseServerClient();
@@ -25,5 +26,9 @@ export default async function AppPage() {
   const schoolName =
     profile?.schools?.name || profile?.school_id || "School account";
 
-  return <DashboardClient schoolName={schoolName} />;
+  return (
+    <ErrorBoundary>
+      <DashboardClient schoolName={schoolName} />
+    </ErrorBoundary>
+  );
 }

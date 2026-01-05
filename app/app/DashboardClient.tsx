@@ -840,8 +840,8 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                 <details
                   className="rounded-lg border border-slate-200 bg-slate-50 p-4"
                   open={advancedOpen.lesson}
-                  onToggle={(event) =>
-                    setAdvancedOpen((prev) => ({ ...prev, lesson: event.currentTarget.open }))
+                  onToggle={() =>
+                    setAdvancedOpen((prev) => ({ ...prev, lesson: !prev.lesson }))
                   }
                 >
                   <summary className="cursor-pointer text-sm font-semibold text-slate-700">
@@ -884,8 +884,8 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
               <details
                 className="rounded-lg border border-slate-200 bg-slate-50 p-4"
                 open={advancedOpen.resource}
-                onToggle={(event) =>
-                  setAdvancedOpen((prev) => ({ ...prev, resource: event.currentTarget.open }))
+                onToggle={() =>
+                  setAdvancedOpen((prev) => ({ ...prev, resource: !prev.resource }))
                 }
               >
                 <summary className="cursor-pointer text-sm font-semibold text-slate-700">
@@ -918,8 +918,8 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                 <details
                   className="rounded-lg border border-slate-200 bg-slate-50 p-4"
                   open={advancedOpen.feedback}
-                  onToggle={(event) =>
-                    setAdvancedOpen((prev) => ({ ...prev, feedback: event.currentTarget.open }))
+                  onToggle={() =>
+                    setAdvancedOpen((prev) => ({ ...prev, feedback: !prev.feedback }))
                   }
                 >
                   <summary className="cursor-pointer text-sm font-semibold text-slate-700">
