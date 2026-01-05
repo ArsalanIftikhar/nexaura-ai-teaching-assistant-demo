@@ -124,6 +124,113 @@ const mergeCitations = (primary: Citation[], secondary: Citation[]) => {
 
 const footerLine = "© NexAura. For school use only.";
 
+const normalizeMcq = (parsed: unknown) => {
+  if (!parsed || typeof parsed !== "object") {
+    return { error: "MCQ payload is not an object." };
+  }
+
+  const payload = parsed as Record<string, unknown>;
+  const questionsRaw = payload.questions;
+  if (!Array.isArray(questionsRaw)) {
+    return { error: "MCQ questions must be an array." };
+  }
+
+  const normalizedQuestions = questionsRaw.map((question, index) => {
+    const item = (question ?? {}) as Record<string, unknown>;
+    const stemValue =
+      typeof item.stem === "string"
+        ? item.stem
+        : typeof item.prompt === "string"
+        ? item.prompt
+        : "";
+
+    const optionsRaw = item.options;
+    if (!Array.isArray(optionsRaw)) {
+      return { error: "MCQ options must be an array." };
+    }
+    const options = optionsRaw
+      .map((option) => {
+        if (typeof option === "string") return option.trim();
+        if (option && typeof option === "object") {
+          const optionRecord = option as Record<string, unknown>;
+          if (typeof optionRecord.text === "string") return optionRecord.text.trim();
+          if (typeof optionRecord.label === "string") return optionRecord.label.trim();
+        }
+        return "";
+      })
+      .filter(Boolean);
+
+    if (options.length < 4) {
+      return { error: "MCQ options must include exactly 4 items." };
+    }
+
+    let correctIndex =
+      typeof item.correct_index === "number" ? item.correct_index : null;
+    if (correctIndex === null && typeof item.correct_option === "string") {
+      const letter = item.correct_option.trim().toUpperCase();
+      const map: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 };
+      if (letter in map) correctIndex = map[letter];
+    }
+
+    return {
+      number: index + 1,
+      stem: stemValue,
+      options: options.slice(0, 4),
+      correct_index: correctIndex,
+      misconception_map: Array.isArray(item.misconception_map)
+        ? item.misconception_map.map((value) => String(value))
+        : undefined,
+    };
+  });
+
+  if (normalizedQuestions.some((q) => "error" in q)) {
+    const errorItem = normalizedQuestions.find((q) => "error" in q) as {
+      error: string;
+    };
+    return { error: errorItem.error };
+  }
+
+  const answerKeyRaw = payload.answer_key;
+  const answerKey =
+    Array.isArray(answerKeyRaw) && answerKeyRaw.length
+      ? answerKeyRaw.map((entry, index) => {
+          const record = (entry ?? {}) as Record<string, unknown>;
+          const correctOption =
+            typeof record.correct_option === "string"
+              ? record.correct_option.trim().toUpperCase()
+              : "";
+          return {
+            number: index + 1,
+            correct_option: correctOption,
+          };
+        })
+      : normalizedQuestions.map((question, index) => {
+          const letters = ["A", "B", "C", "D"] as const;
+          const correctOption =
+            typeof question.correct_index === "number"
+              ? letters[question.correct_index]
+              : "A";
+          return {
+            number: index + 1,
+            correct_option: correctOption,
+          };
+        });
+
+  return {
+    value: {
+      resource_kind: "mcq",
+      title: typeof payload.title === "string" ? payload.title : "MCQ Quiz",
+      teacher_instructions:
+        typeof payload.teacher_instructions === "string"
+          ? payload.teacher_instructions
+          : "Complete this quiz in 10–15 minutes.",
+      questions: normalizedQuestions,
+      answer_key: answerKey,
+      citations: Array.isArray(payload.citations) ? payload.citations : [],
+    },
+  };
+};
+
 const applyFooter = (output: z.infer<typeof GenericOutputSchema>) => {
   if (output.sections.length === 0) return output;
   const updatedSections = output.sections.map((section, index) => {
@@ -540,7 +647,37 @@ Output JSON only.`;
     mode === "resource" && normalizedResourceType
       ? getResourceSchema(normalizedResourceType)
       : GenericOutputSchema;
-  const primaryParse = parseOutput(schema, content);
+  let primaryParse = parseOutput(schema, content);
+  if (mode === "resource" && normalizedResourceType === "mcq") {
+    const extracted = extractJson(content) ?? content;
+    try {
+      const parsed = JSON.parse(extracted);
+      const normalized = normalizeMcq(parsed);
+      if ("value" in normalized) {
+        const normalizedParse = parseOutput(McqResourceSchema, JSON.stringify(normalized.value));
+        if (normalizedParse) {
+          primaryParse = normalizedParse;
+        } else {
+          const result = McqResourceSchema.safeParse(normalized.value);
+          if (!result.success) {
+            console.error(
+              `mcq_zod_issues=${JSON.stringify(result.error.issues).slice(0, 4000)}`
+            );
+            console.error(`mcq_raw_head=${content.slice(0, 800)}`);
+            console.error(`mcq_raw_tail=${content.slice(-800)}`);
+          }
+        }
+      } else {
+        console.error(`mcq_zod_issues=${normalized.error}`);
+        console.error(`mcq_raw_head=${content.slice(0, 800)}`);
+        console.error(`mcq_raw_tail=${content.slice(-800)}`);
+      }
+    } catch (error) {
+      console.error(`mcq_parse_error=${String(error)}`);
+      console.error(`mcq_raw_head=${content.slice(0, 800)}`);
+      console.error(`mcq_raw_tail=${content.slice(-800)}`);
+    }
+  }
 
   let finalOutput: ResourceOutput | z.infer<typeof GenericOutputSchema> | null = null;
   let repairUsed = false;
@@ -557,6 +694,18 @@ Output JSON only.`;
     if (mode === "resource" && normalizedResourceType === "mcq") {
       const extracted = extractJson(content) ?? content;
       try {
+        const parsedOriginal = JSON.parse(extracted);
+        const normalizedOriginal = normalizeMcq(parsedOriginal);
+        const mcqIssueSummary =
+          "value" in normalizedOriginal
+            ? (() => {
+                const result = McqResourceSchema.safeParse(normalizedOriginal.value);
+                return result.success
+                  ? ""
+                  : JSON.stringify(result.error.issues).slice(0, 4000);
+              })()
+            : normalizedOriginal.error;
+
         const mcqRepair = await openai.chat.completions.create({
           model: process.env.MODEL_NAME || "gpt-4o-mini",
           messages: [
@@ -567,7 +716,7 @@ Output JSON only.`;
             },
             {
               role: "user",
-              content: `Schema:\n${resourceSchemaText.mcq}\n\nRules:\n- questions array must be EXACTLY N items and numbered 1..N.\n- options array must include EXACTLY 4 options per question.\n- correct_index must be 0,1,2,or 3.\n- answer_key must include every question with correct_option A-D, matching questions.\n- Output ONLY the schema fields. No extra keys.\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`,
+              content: `Schema:\n${resourceSchemaText.mcq}\n\nRules:\n- questions array must be EXACTLY N items and numbered 1..N.\n- options array must include EXACTLY 4 options per question.\n- correct_index must be 0,1,2,or 3.\n- answer_key must include every question with correct_option A-D, matching questions.\n- Output ONLY the schema fields. No extra keys.\n\nZod issues:\n${mcqIssueSummary || "none"}\n\nInput:\n${extracted}\n\nOutput ONLY JSON.`,
             },
           ],
           temperature: 0,
@@ -576,7 +725,19 @@ Output JSON only.`;
         });
 
         const repairedContent = mcqRepair.choices[0]?.message?.content || "";
-        const repairParse = parseOutput(McqResourceSchema, repairedContent);
+        let repairParse = parseOutput(McqResourceSchema, repairedContent);
+        if (!repairParse) {
+          const parsedRepair = parseOutput(z.any(), repairedContent);
+          if (parsedRepair) {
+            const normalizedRepair = normalizeMcq(parsedRepair);
+            if ("value" in normalizedRepair) {
+              repairParse = parseOutput(
+                McqResourceSchema,
+                JSON.stringify(normalizedRepair.value)
+              );
+            }
+          }
+        }
         if (repairParse) {
           finalOutput = repairParse;
           repairUsed = true;
@@ -584,6 +745,8 @@ Output JSON only.`;
           console.error(
             `MCQ repair failed. Raw output: ${repairedContent.slice(0, 300)}`
           );
+          console.error(`mcq_raw_head=${repairedContent.slice(0, 800)}`);
+          console.error(`mcq_raw_tail=${repairedContent.slice(-800)}`);
           const shouldDebug =
             process.env.NODE_ENV !== "production" ||
             process.env.DEBUG_GENERATION === "1";
@@ -591,15 +754,31 @@ Output JSON only.`;
           if (shouldDebug) {
             let parseError: unknown = null;
             try {
-              parseError = McqResourceSchema.safeParse(
-                JSON.parse(repairedContent)
-              ).error?.flatten();
+              const parsedRepair = JSON.parse(repairedContent);
+              const normalizedRepair = normalizeMcq(parsedRepair);
+              if ("value" in normalizedRepair) {
+                const result = McqResourceSchema.safeParse(normalizedRepair.value);
+                parseError = result.success
+                  ? null
+                  : JSON.stringify(result.error.issues).slice(0, 4000);
+                if (!result.success) {
+                  console.error(
+                    `mcq_zod_issues=${JSON.stringify(result.error.issues).slice(0, 4000)}`
+                  );
+                }
+              } else {
+                parseError = normalizedRepair.error;
+                console.error(`mcq_zod_issues=${normalizedRepair.error}`);
+              }
             } catch (parseErr) {
               parseError = { json_error: String(parseErr) };
+              console.error(`mcq_zod_issues=${String(parseErr)}`);
             }
             debugPayload = {
-              debug_mcq_excerpt: repairedContent.slice(0, 400),
-              debug_mcq_parse_error: parseError,
+              debug_zod_issues: parseError,
+              debug_raw_head: repairedContent.slice(0, 800),
+              debug_raw_tail: repairedContent.slice(-800),
+              debug_repair_used: true,
             };
           }
           return NextResponse.json(
@@ -612,6 +791,8 @@ Output JSON only.`;
         }
       } catch (error) {
         console.error("MCQ repair request failed", error);
+        console.error(`mcq_raw_head=${extracted.slice(0, 800)}`);
+        console.error(`mcq_raw_tail=${extracted.slice(-800)}`);
         const shouldDebug =
           process.env.NODE_ENV !== "production" ||
           process.env.DEBUG_GENERATION === "1";
@@ -619,19 +800,31 @@ Output JSON only.`;
         if (shouldDebug) {
           let parseError: unknown = null;
           try {
-            parseError = McqResourceSchema.safeParse(
-              JSON.parse(extracted)
-            ).error?.flatten();
+            const parsedRepair = JSON.parse(extracted);
+            const normalizedRepair = normalizeMcq(parsedRepair);
+            if ("value" in normalizedRepair) {
+              const result = McqResourceSchema.safeParse(normalizedRepair.value);
+              parseError = result.success
+                ? null
+                : JSON.stringify(result.error.issues).slice(0, 4000);
+            } else {
+              parseError = normalizedRepair.error;
+            }
           } catch (parseErr) {
             parseError = { json_error: String(parseErr) };
           }
           debugPayload = {
-            debug_mcq_excerpt: extracted.slice(0, 400),
-            debug_mcq_parse_error: parseError,
+            debug_zod_issues: parseError,
+            debug_raw_head: extracted.slice(0, 800),
+            debug_raw_tail: extracted.slice(-800),
+            debug_repair_used: false,
           };
         }
         return NextResponse.json(
-          { error: "MCQ formatting repair failed. Please try again.", ...debugPayload },
+          {
+            error: "MCQ formatting repair failed. Please try again.",
+            ...debugPayload,
+          },
           { status: 500 }
         );
       }
