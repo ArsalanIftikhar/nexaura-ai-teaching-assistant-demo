@@ -331,37 +331,57 @@ const normalizeWorksheet = (parsed: unknown) => {
 
 const parseWithJsonRepair = <T extends z.ZodTypeAny>(schema: T, value: string) => {
   const extracted = extractJson(value) ?? value;
-  let parsed: unknown;
   let jsonError: string | null = null;
   let repaired = false;
+  let parsedData: z.infer<T> | null = null;
+  let zodIssues: z.ZodIssue[] | string | null = null;
+
   try {
-    parsed = JSON.parse(extracted);
+    const parsed = JSON.parse(extracted);
+    const result = schema.safeParse(parsed);
+    if (result.success) {
+      parsedData = result.data;
+    } else {
+      zodIssues = result.error.issues;
+    }
   } catch (error) {
     jsonError = String(error);
     try {
       const repairedJson = jsonrepair(extracted);
-      parsed = JSON.parse(repairedJson);
       repaired = true;
-      jsonError = null;
+      const parsed = JSON.parse(repairedJson);
+      const result = schema.safeParse(parsed);
+      if (result.success) {
+        parsedData = result.data;
+        jsonError = null;
+      } else {
+        zodIssues = result.error.issues;
+      }
     } catch (repairError) {
       jsonError = String(repairError);
-      return { data: null, parsed: null, extracted, jsonError, zodIssues: null, repaired };
     }
   }
 
-  const result = schema.safeParse(parsed);
-  if (result.success) {
-    return { data: result.data, parsed, extracted, jsonError: null, zodIssues: null, repaired };
-  }
-
   return {
-    data: null,
-    parsed,
-    extracted,
+    data: parsedData,
     jsonError,
-    zodIssues: result.error.issues,
+    zodIssues,
+    extracted,
     repaired,
   };
+};
+
+const parseRawJson = (value: string) => {
+  try {
+    return { parsed: JSON.parse(value), jsonError: null };
+  } catch (error) {
+    try {
+      const repairedJson = jsonrepair(value);
+      return { parsed: JSON.parse(repairedJson), jsonError: null };
+    } catch (repairError) {
+      return { parsed: null, jsonError: String(repairError) };
+    }
+  }
 };
 
 const applyFooter = (output: z.infer<typeof GenericOutputSchema>) => {
@@ -791,10 +811,7 @@ Output JSON only.`;
       ? getResourceSchema(normalizedResourceType)
       : GenericOutputSchema;
   let primaryParse: ResourceOutput | z.infer<typeof GenericOutputSchema> | null = null;
-  let primaryDiagnostics:
-    | ReturnType<typeof parseWithJsonRepair>
-    | ReturnType<typeof diagnoseParse>
-    | null = null;
+  let primaryDiagnostics: ReturnType<typeof parseWithJsonRepair> | null = null;
   if (
     mode === "resource" &&
     normalizedResourceType &&
@@ -842,11 +859,10 @@ Output JSON only.`;
     mode === "resource" &&
     normalizedResourceType === "worksheet" &&
     primaryDiagnostics &&
-    "parsed" in primaryDiagnostics &&
-    primaryDiagnostics.parsed &&
     !primaryParse
   ) {
-    const normalizedWorksheet = normalizeWorksheet(primaryDiagnostics.parsed);
+    const rawParse = parseRawJson(primaryDiagnostics.extracted);
+    const normalizedWorksheet = rawParse.parsed ? normalizeWorksheet(rawParse.parsed) : null;
     if (normalizedWorksheet) {
       const normalizedParse = WorksheetResourceSchema.safeParse(normalizedWorksheet);
       if (normalizedParse.success) {
@@ -1018,10 +1034,7 @@ Output JSON only.`;
     ) {
       const extracted = extractJson(content) ?? content;
       const schemaText = resourceSchemaText[normalizedResourceType];
-      const diagnoseResult =
-        primaryDiagnostics && "parsed" in primaryDiagnostics
-          ? primaryDiagnostics
-          : parseWithJsonRepair(schema, content);
+      const diagnoseResult = primaryDiagnostics ?? parseWithJsonRepair(schema, content);
       if (diagnoseResult.jsonError) {
         console.error(`${normalizedResourceType}_json_error=${diagnoseResult.jsonError}`);
       }
@@ -1070,11 +1083,11 @@ Output JSON only.`;
           if (repairDiagnostics.data) {
             finalOutput = repairDiagnostics.data;
             repairUsed = true;
-          } else if (
-            normalizedResourceType === "worksheet" &&
-            repairDiagnostics.parsed
-          ) {
-            const normalizedWorksheet = normalizeWorksheet(repairDiagnostics.parsed);
+          } else if (normalizedResourceType === "worksheet") {
+            const rawRepair = parseRawJson(repairDiagnostics.extracted);
+            const normalizedWorksheet = rawRepair.parsed
+              ? normalizeWorksheet(rawRepair.parsed)
+              : null;
             if (normalizedWorksheet) {
               const normalizedParse = WorksheetResourceSchema.safeParse(normalizedWorksheet);
               if (normalizedParse.success) {
