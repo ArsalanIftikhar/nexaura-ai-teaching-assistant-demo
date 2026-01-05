@@ -11,11 +11,13 @@ export const worksheetPrompt = `You are generating a worksheet. Output MUST be v
 Requirements:
 - EXACTLY N questions (use the provided count).
 - Teacher instructions MUST say the worksheet should take 20–25 minutes max.
+- Teacher instructions MUST include the line: "Differentiation applied: <Low|Medium|High|Mixed>".
 - Use Grade (not Year).
 - Apply class ability rules:
-  - Low: 70/25/5, step-by-step guidance, sentence starters, more examples.
-  - Mixed: 50/35/15 balanced mix.
-  - High: 30/40/30, fewer hints, deeper reasoning, extension prompts.
+  - Low: scaffold-heavy with worked example, sentence starters, word bank, more hints, fewer multi-step items.
+  - Medium: balanced set with 1–2 multi-step items, light scaffolding, no labeled "Challenge" items.
+  - High: 2–3 multi-step/reasoning items near the end, minimal scaffolding, extension prompts allowed.
+  - Mixed: balanced mix with optional challenge items labeled "Challenge".
 - Provide concise model answers for every question.
 - Do NOT include slides, speaker notes, or slide language.
 - If curriculum is missing, include the exact phrase: "Not found in provided curriculum documents" and proceed with safe assumptions.
@@ -42,9 +44,10 @@ Requirements:
 - Teacher instructions MUST be short and say the quiz should take 10–15 minutes max.
 - Use Grade (not Year).
 - Apply class ability rules:
-  - Low: 70/25/5, step-by-step guidance, sentence starters, more examples.
-  - Mixed: 50/35/15 balanced mix.
-  - High: 30/40/30, fewer hints, deeper reasoning, extension prompts.
+  - Low: scaffold-heavy, simpler language, more hints.
+  - Medium: core pathway with light scaffolding, standard difficulty.
+  - High: minimal scaffolding, deeper reasoning, extension prompts.
+  - Mixed: balanced mix with optional challenge variants.
 - Provide 4 options per question and a correct_index.
 - Each question must include a one-sentence explanation.
 - At least one incorrect option should reflect a common misconception about the topic or prior learning.
@@ -73,7 +76,8 @@ export const slidesPackPrompt = `You are generating a slides content pack for te
   "teacher_appendix": {
     "starter_questions": [{ "q": string, "answer": string }],
     "mini_whiteboard_checks": [{ "q": string, "expected": string, "common_wrong"?: string }],
-    "exit_ticket": { "q": string, "answer"?: string }
+    "exit_ticket": { "q": string, "answer"?: string },
+    "differentiation_note": string
   },
   "citations": [{ "source": string, "excerpt": string }]
 }
@@ -93,13 +97,15 @@ Teacher appendix (STRICT):
 - starter_questions: EXACTLY 4 Qs with answers, based ONLY on prior_learning + starter curriculum excerpts.
 - mini_whiteboard_checks: short diagnostic checks aligned to misconceptions.
 - exit_ticket: 1 question (+ answer if objective).
+- differentiation_note: use the exact line "Differentiation applied: <Low|Medium|High|Mixed>".
 
 Other requirements:
 - Use Grade (not Year).
 - Apply class ability rules:
-  - Low: 70/25/5, step-by-step guidance, sentence starters, more examples.
-  - Mixed: 50/35/15 balanced mix.
-  - High: 30/40/30, fewer hints, deeper reasoning, extension prompts.
+  - Low: scaffold-heavy with worked example, sentence starters, word bank, clear modeling.
+  - Medium (core pathway): standard slide structure, light scaffolding only (max one hint box OR one model sentence stem), include at least one misconception-check AfL question, no Extension/Challenge slide.
+  - High: minimal scaffolding, deeper reasoning prompts, include a dedicated Extension/Challenge slide.
+  - Mixed: core + optional challenge on the same slide, minimal scaffolds (not low-level).
 - Do NOT include worksheet/MCQ formatting.
 - If curriculum is missing, include the exact phrase: "Not found in provided curriculum documents" and proceed with safe assumptions.
 Output JSON only.`;

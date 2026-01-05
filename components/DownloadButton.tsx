@@ -44,6 +44,7 @@ interface DownloadButtonProps {
       starter_questions: Array<{ q: string; answer: string }>;
       mini_whiteboard_checks: Array<{ q: string; expected: string; common_wrong?: string }>;
       exit_ticket: { q: string; answer?: string };
+      differentiation_note?: string;
     };
   };
 }

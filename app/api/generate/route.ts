@@ -45,6 +45,16 @@ const RESOURCE_LIMITS = {
   slides_pack: { min: 8, max: 18 },
 };
 
+const normalizeClassAbility = (value: unknown) => {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "low") return "Low";
+  if (normalized === "medium") return "Medium";
+  if (normalized === "high") return "High";
+  if (normalized === "mixed") return "Mixed";
+  return value;
+};
+
 const requestSchema = z.object({
   mode: z.enum(["lesson", "resource", "feedback"]),
   topic: z.string().optional().default(""),
@@ -56,7 +66,10 @@ const requestSchema = z.object({
     .optional()
     .default("New concept"),
   duration: z.enum(["60", "90"]).optional().default("60"),
-  class_ability: z.enum(["Low", "Medium", "High", "Mixed"]).optional().default("Mixed"),
+  class_ability: z.preprocess(
+    normalizeClassAbility,
+    z.enum(["Low", "Medium", "High", "Mixed"]).optional().default("Mixed")
+  ),
   class_profile: z.string().optional().default(""),
   curriculum_key: z.string().optional().default("national_pk"),
   prior_learning: z.string().optional().default(""),

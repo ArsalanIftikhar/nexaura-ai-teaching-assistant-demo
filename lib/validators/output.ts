@@ -104,6 +104,7 @@ export const SlidesPackResourceSchema = z.object({
       q: z.string().min(1),
       answer: z.string().optional(),
     }),
+    differentiation_note: z.string().min(1),
   }),
   citations: z.array(CitationSchema).default([]),
 });

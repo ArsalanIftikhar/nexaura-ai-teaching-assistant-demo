@@ -176,6 +176,11 @@ export const POST = async (request: Request) => {
           spacing: { before: 360, after: 120 },
         })
       );
+      content.push(
+        new Paragraph({
+          text: resource.teacher_appendix.differentiation_note,
+        })
+      );
       content.push(new Paragraph({ text: "Starter questions:" }));
       resource.teacher_appendix.starter_questions.forEach((item, index) => {
         content.push(new Paragraph({ text: `${index + 1}. ${item.q} — ${item.answer}` }));

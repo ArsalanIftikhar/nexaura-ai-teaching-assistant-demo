@@ -20,4 +20,10 @@ Requirements:
 - If total marks are provided, include an indicative mark with a disclaimer.
 - End the final section with: "© NexAura. For school use only."
 - If curriculum is missing, include the exact phrase: "Not found in provided curriculum documents" and proceed with safe assumptions.
+
+Ability impact (if provided in context):
+- Low: simpler language, more reassurance, step-by-step next steps.
+- Medium: balanced tone with light scaffolding cues.
+- Mixed: balanced tone plus optional stretch prompt.
+- High: concise feedback with deeper reasoning prompts.
 Output JSON only.`;

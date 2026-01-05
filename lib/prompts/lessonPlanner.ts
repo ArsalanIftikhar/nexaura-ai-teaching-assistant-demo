@@ -41,6 +41,7 @@ Lesson type rules (STRICT):
 
 Ability impact (derived; no extra inputs):
 - Low: 70/25/5, step-by-step guidance, sentence starters, more examples.
-- Mixed: 50/35/15 balanced mix.
+- Medium: 50/35/15 core pathway, light scaffolding, standard pacing.
+- Mixed: 50/35/15 balanced mix with optional challenge prompts.
 - High: 30/40/30, fewer hints, deeper reasoning, extension prompts.
 Output JSON only.`;

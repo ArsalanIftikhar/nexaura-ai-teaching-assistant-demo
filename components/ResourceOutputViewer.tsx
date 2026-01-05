@@ -45,6 +45,7 @@ type ResourceOutput =
         starter_questions: Array<{ q: string; answer: string }>;
         mini_whiteboard_checks: Array<{ q: string; expected: string; common_wrong?: string }>;
         exit_ticket: { q: string; answer?: string };
+        differentiation_note: string;
       };
       citations: Citation[];
     };
@@ -277,6 +278,9 @@ export default function ResourceOutputViewer({
               Teacher appendix
             </h4>
             <div className="mt-3 space-y-3">
+              <p className="text-xs font-semibold text-slate-600">
+                {output.teacher_appendix.differentiation_note}
+              </p>
               <div>
                 <p className="text-xs font-semibold text-slate-600">Starter questions</p>
                 <ul className="mt-1 list-disc space-y-1 pl-5">

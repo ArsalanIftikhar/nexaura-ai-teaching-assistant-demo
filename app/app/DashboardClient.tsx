@@ -57,6 +57,7 @@ interface SlidesPackAppendix {
   starter_questions: { q: string; answer: string }[];
   mini_whiteboard_checks: { q: string; expected: string; common_wrong?: string }[];
   exit_ticket: { q: string; answer?: string };
+  differentiation_note: string;
 }
 
 interface DebugInfo {
@@ -258,6 +259,7 @@ interface ResourceInputs {
 interface FeedbackInputs {
   grade: string;
   curriculumKey: string;
+  classAbility: string;
   assessmentType: string;
   questionText: string;
   studentText: string;
@@ -291,6 +293,7 @@ const defaultResourceInputs: ResourceInputs = {
 const defaultFeedbackInputs: FeedbackInputs = {
   grade: "Grade 8",
   curriculumKey: "national_pk",
+  classAbility: "Mixed",
   assessmentType: "Short answer",
   questionText: "Explain how diffusion works in the lungs.",
   studentText: "",
@@ -550,6 +553,7 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
           : {
               mode: "feedback",
               grade: feedbackInputs.grade,
+              class_ability: feedbackInputs.classAbility,
               curriculum_key: feedbackInputs.curriculumKey,
               assessment_type: feedbackInputs.assessmentType,
               question_text: feedbackInputs.questionText,
@@ -615,6 +619,7 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                 starter_questions: [],
                 mini_whiteboard_checks: [],
                 exit_ticket: { q: "" },
+                differentiation_note: "Differentiation applied: Mixed",
               },
           };
         }
@@ -812,6 +817,13 @@ export default function DashboardClient({ schoolName }: DashboardClientProps) {
                   value={feedbackInputs.grade}
                   options={gradeOptions}
                   onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, grade: value }))}
+                />
+                <SelectField
+                  id="class-ability"
+                  label="Class ability"
+                  value={feedbackInputs.classAbility}
+                  options={abilityOptions}
+                  onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, classAbility: value }))}
                 />
                 <SelectField
                   id="curriculum"
