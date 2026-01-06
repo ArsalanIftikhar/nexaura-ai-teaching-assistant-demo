@@ -1,0 +1,1100 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import Tabs from "@/components/Tabs";
+import AppShell from "@/components/AppShell";
+import OutputViewer from "@/components/OutputViewer";
+import DownloadButton from "@/components/DownloadButton";
+import PrivacyWarningModal from "@/components/PrivacyWarningModal";
+import ConfirmModal from "@/components/ConfirmModal";
+import ResourceOutputViewer from "@/components/ResourceOutputViewer";
+import { SelectField, TextAreaField, TextField } from "@/components/FormControls";
+import { containsPii } from "@/lib/validators/pii";
+
+interface Section {
+  heading: string;
+  content: string;
+}
+
+interface Citation {
+  source: string;
+  excerpt: string;
+}
+
+interface WorksheetQuestion {
+  number: number;
+  prompt: string;
+}
+
+interface WorksheetAnswer {
+  number: number;
+  answer: string;
+}
+
+interface McqQuestion {
+  number: number;
+  stem: string;
+  options: [string, string, string, string];
+  correct_index: number;
+  explanation: string;
+}
+
+interface McqAnswerKeyEntry {
+  number: number;
+  correct_option: "A" | "B" | "C" | "D";
+}
+
+interface SlidesPackSlide {
+  slide_number: number;
+  title: string;
+  bullets: string[];
+  speaker_notes?: string;
+}
+
+interface DebugInfo {
+  resource_kind?: string;
+  curriculum?: string;
+  starter_retrieval_used?: boolean;
+}
+
+interface GenericOutputState {
+  kind: "generic";
+  title: string;
+  sections: Section[];
+  citations: Citation[];
+  formatWarning?: boolean;
+  curriculumWarning?: boolean;
+  message?: string | null;
+}
+
+interface WorksheetOutputState {
+  kind: "resource";
+  resource_kind: "worksheet";
+  title: string;
+  teacher_instructions: string;
+  questions: WorksheetQuestion[];
+  answers: WorksheetAnswer[];
+  citations: Citation[];
+  formatWarning?: boolean;
+  curriculumWarning?: boolean;
+  message?: string | null;
+  debug?: DebugInfo;
+}
+
+interface McqOutputState {
+  kind: "resource";
+  resource_kind: "mcq";
+  title: string;
+  teacher_instructions: string;
+  questions: McqQuestion[];
+  answer_key: McqAnswerKeyEntry[];
+  citations: Citation[];
+  formatWarning?: boolean;
+  curriculumWarning?: boolean;
+  message?: string | null;
+  debug?: DebugInfo;
+}
+
+interface SlidesPackOutputState {
+  kind: "resource";
+  resource_kind: "slides_pack";
+  title: string;
+  slides: SlidesPackSlide[];
+  citations: Citation[];
+  formatWarning?: boolean;
+  curriculumWarning?: boolean;
+  message?: string | null;
+  debug?: DebugInfo;
+}
+
+type ResourceOutputState = WorksheetOutputState | McqOutputState | SlidesPackOutputState;
+
+type OutputState = GenericOutputState | ResourceOutputState;
+
+interface DashboardClientProps {
+  schoolName: string;
+}
+
+type TabKey = "lesson" | "resource" | "feedback";
+
+const STORAGE_CONFIRM_KEY = "nexaura_confirm_no_pii";
+
+const curriculumOptions = [
+  { value: "national_pk", label: "National (Pakistan)" },
+  { value: "cambridge_lower_secondary", label: "Cambridge Lower Secondary" },
+  { value: "oxfordaqa_international", label: "OxfordAQA International" },
+];
+
+const gradeOptions = [
+  { value: "Grade 7", label: "Grade 7" },
+  { value: "Grade 8", label: "Grade 8" },
+  { value: "Grade 9", label: "Grade 9" },
+];
+
+const lessonTypeOptions = [
+  { value: "New concept", label: "New concept" },
+  { value: "Revision & practice", label: "Revision & practice" },
+  { value: "Exam prep", label: "Exam prep" },
+];
+
+const durationOptions = [
+  { value: "60", label: "60 minutes" },
+  { value: "90", label: "90 minutes" },
+];
+
+const abilityOptions = [
+  { value: "High", label: "High" },
+  { value: "Medium", label: "Medium" },
+  { value: "Low", label: "Low" },
+  { value: "Mixed", label: "Mixed" },
+];
+
+const resourceTypeOptions = [
+  { value: "worksheet", label: "Worksheet" },
+  { value: "mcq", label: "MCQ quiz" },
+  { value: "slides_pack", label: "Slides content pack" },
+];
+
+const assessmentTypeOptions = [
+  { value: "MCQ", label: "MCQ" },
+  { value: "Short answer", label: "Short answer" },
+  { value: "Extended response", label: "Extended response" },
+  { value: "Exam question", label: "Exam question" },
+  { value: "Other", label: "Other" },
+];
+
+const resourceCountConfig: Record<
+  string,
+  { min: number; max: number; defaultValue: string; label: string }
+> = {
+  worksheet: {
+    min: 6,
+    max: 20,
+    defaultValue: "10",
+    label: "Number of questions",
+  },
+  mcq: {
+    min: 6,
+    max: 15,
+    defaultValue: "10",
+    label: "Number of questions",
+  },
+};
+
+const summaryByTab: Record<TabKey, { title: string; bullets: string[] }> = {
+  lesson: {
+    title: "Lesson Plan",
+    bullets: [
+      "UK PGCE-style lesson structure (adapted for Pakistan schools)",
+      "Assessment for Learning (checks for understanding)",
+      "Curriculum citations",
+    ],
+  },
+  resource: {
+    title: "Resources",
+    bullets: [
+      "Worksheet, MCQ quiz, slides content pack",
+      "Slide content packs for manual slide creation",
+      "Suggested external resources",
+    ],
+  },
+  feedback: {
+    title: "Feedback",
+    bullets: ["Student-friendly feedback", "Teacher notes", "References the question set"],
+  },
+};
+
+const storageKeyForInputs = (tab: TabKey) => `nexaura_inputs_${tab}`;
+const storageKeyForOutput = (tab: TabKey) => `nexaura_output_${tab}`;
+
+const normalizeResourceTypeInput = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "worksheet") return "worksheet";
+  if (normalized === "mcq" || normalized === "mcq quiz") return "mcq";
+  if (normalized === "slides_pack" || normalized === "slides content pack") {
+    return "slides_pack";
+  }
+  return value;
+};
+
+interface LessonInputs {
+  topic: string;
+  grade: string;
+  lessonType: string;
+  duration: string;
+  classAbility: string;
+  priorLearning: string;
+  curriculumKey: string;
+  classProfile: string;
+  notes: string;
+}
+
+interface ResourceInputs {
+  topic: string;
+  grade: string;
+  curriculumKey: string;
+  resourceType: string;
+  questionCount: string;
+  classAbility: string;
+  priorLearning: string;
+  notes: string;
+}
+
+interface FeedbackInputs {
+  grade: string;
+  curriculumKey: string;
+  classAbility: string;
+  assessmentType: string;
+  questionText: string;
+  studentText: string;
+  totalMarks: string;
+  rubric: string;
+}
+
+const defaultLessonInputs: LessonInputs = {
+  topic: "Cells and specialised cells",
+  grade: "Grade 8",
+  lessonType: "New concept",
+  duration: "60",
+  classAbility: "Mixed",
+  priorLearning: "Basic plant vs animal cells and organelles",
+  curriculumKey: "national_pk",
+  classProfile: "2 EAL learners; 1 learner needing additional support; varying confidence",
+  notes: "",
+};
+
+const defaultResourceInputs: ResourceInputs = {
+  topic: "Cells and specialised cells",
+  grade: "Grade 8",
+  curriculumKey: "national_pk",
+  resourceType: "worksheet",
+  questionCount: "10",
+  classAbility: "Mixed",
+  priorLearning: "Basic plant vs animal cells and organelles",
+  notes: "",
+};
+
+const defaultFeedbackInputs: FeedbackInputs = {
+  grade: "Grade 8",
+  curriculumKey: "national_pk",
+  classAbility: "Mixed",
+  assessmentType: "Short answer",
+  questionText: "Explain how diffusion works in the lungs.",
+  studentText: "",
+  totalMarks: "",
+  rubric: "",
+};
+
+const suggestedLinksAllowlist = [
+  { label: "Khan Academy", url: "https://www.khanacademy.org" },
+  { label: "BBC Bitesize", url: "https://www.bbc.co.uk/bitesize" },
+  { label: "Oak National Academy", url: "https://www.thenational.academy" },
+  { label: "CK-12", url: "https://www.ck12.org" },
+];
+
+const suggestedLinksForTopic = (topic: string) => {
+  const lower = topic.toLowerCase();
+  if (lower.includes("cell") || lower.includes("respiration") || lower.includes("ecosystem")) {
+    return [suggestedLinksAllowlist[0], suggestedLinksAllowlist[2]];
+  }
+  if (lower.includes("algebra") || lower.includes("ratio") || lower.includes("equation")) {
+    return [suggestedLinksAllowlist[0], suggestedLinksAllowlist[3]];
+  }
+  if (lower.includes("reading") || lower.includes("writing") || lower.includes("paragraph")) {
+    return [suggestedLinksAllowlist[1], suggestedLinksAllowlist[2]];
+  }
+  return [suggestedLinksAllowlist[0], suggestedLinksAllowlist[1]];
+};
+
+export default function DashboardClient({ schoolName }: DashboardClientProps) {
+  const [activeTab, setActiveTab] = useState<TabKey>("lesson");
+  const [lessonInputs, setLessonInputs] = useState<LessonInputs>(defaultLessonInputs);
+  const [resourceInputs, setResourceInputs] = useState<ResourceInputs>(defaultResourceInputs);
+  const [feedbackInputs, setFeedbackInputs] = useState<FeedbackInputs>(defaultFeedbackInputs);
+  const [tabOutputs, setTabOutputs] = useState<Record<TabKey, OutputState | null>>({
+    lesson: null,
+    resource: null,
+    feedback: null,
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [showPiiModal, setShowPiiModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"generate" | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState<Record<TabKey, boolean>>({
+    lesson: false,
+    resource: false,
+    feedback: false,
+  });
+
+  const outputRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const storedConfirm = sessionStorage.getItem(STORAGE_CONFIRM_KEY);
+    if (storedConfirm !== "true") {
+      setShowConfirmModal(false);
+    }
+
+    const storedLesson = sessionStorage.getItem(storageKeyForInputs("lesson"));
+    const storedResource = sessionStorage.getItem(storageKeyForInputs("resource"));
+    const storedFeedback = sessionStorage.getItem(storageKeyForInputs("feedback"));
+
+    if (storedLesson) setLessonInputs(JSON.parse(storedLesson));
+    if (storedResource) {
+      const parsedResource = JSON.parse(storedResource) as ResourceInputs;
+      setResourceInputs({
+        ...parsedResource,
+        resourceType: normalizeResourceTypeInput(parsedResource.resourceType),
+      });
+    }
+    if (storedFeedback) setFeedbackInputs(JSON.parse(storedFeedback));
+
+    const outputs: Record<TabKey, OutputState | null> = {
+      lesson: null,
+      resource: null,
+      feedback: null,
+    };
+    (Object.keys(outputs) as TabKey[]).forEach((tab) => {
+      const stored = sessionStorage.getItem(storageKeyForOutput(tab));
+      if (stored) {
+        const parsed = JSON.parse(stored) as OutputState;
+        if (tab === "resource") {
+          outputs[tab] =
+            parsed && "resource_kind" in parsed
+              ? ({ ...parsed, kind: "resource" } as ResourceOutputState)
+              : null;
+        } else {
+          outputs[tab] =
+            parsed && "sections" in parsed
+              ? ({ ...parsed, kind: "generic" } as GenericOutputState)
+              : null;
+        }
+      }
+    });
+    setTabOutputs(outputs);
+  }, []);
+
+  useEffect(() => {
+    sessionStorage.setItem(storageKeyForInputs("lesson"), JSON.stringify(lessonInputs));
+  }, [lessonInputs]);
+
+  useEffect(() => {
+    sessionStorage.setItem(storageKeyForInputs("resource"), JSON.stringify(resourceInputs));
+  }, [resourceInputs]);
+
+  useEffect(() => {
+    sessionStorage.setItem(storageKeyForInputs("feedback"), JSON.stringify(feedbackInputs));
+  }, [feedbackInputs]);
+
+  useEffect(() => {
+    (Object.keys(tabOutputs) as TabKey[]).forEach((tab) => {
+      const output = tabOutputs[tab];
+      if (output) {
+        sessionStorage.setItem(storageKeyForOutput(tab), JSON.stringify(output));
+      } else {
+        sessionStorage.removeItem(storageKeyForOutput(tab));
+      }
+    });
+  }, [tabOutputs]);
+
+  useEffect(() => {
+    if (tabOutputs[activeTab] && outputRef.current) {
+      outputRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [tabOutputs, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "resource") {
+      const nextDefault =
+        resourceCountConfig[resourceInputs.resourceType]?.defaultValue || "";
+      if (resourceInputs.resourceType !== "slides_pack") {
+        if (resourceInputs.questionCount !== nextDefault) {
+          setResourceInputs((prev) => ({ ...prev, questionCount: nextDefault }));
+        }
+      }
+    }
+  }, [activeTab, resourceInputs.resourceType]);
+
+  const currentOutput = tabOutputs[activeTab];
+  const summary = summaryByTab[activeTab];
+
+  const priorLearningRequired =
+    activeTab === "lesson" ||
+    (activeTab === "resource" && resourceInputs.resourceType === "slides_pack");
+
+  const countConfig = resourceCountConfig[resourceInputs.resourceType] ?? {
+    min: 1,
+    max: 20,
+    defaultValue: "10",
+    label: "Number of questions",
+  };
+
+  const isSlidesPack = resourceInputs.resourceType === "slides_pack";
+  const questionCountValue = resourceInputs.questionCount.trim();
+  const questionCountNumber = Number(questionCountValue);
+  const questionCountValid =
+    activeTab !== "resource" ||
+    isSlidesPack ||
+    (questionCountValue.length > 0 &&
+      Number.isFinite(questionCountNumber) &&
+      Number.isInteger(questionCountNumber) &&
+      questionCountNumber >= countConfig.min &&
+      questionCountNumber <= countConfig.max);
+
+  const questionCountError =
+    activeTab === "resource" && !questionCountValid
+      ? `Enter a whole number between ${countConfig.min} and ${countConfig.max}.`
+      : "";
+
+  const canGenerate = useMemo(() => {
+    if (activeTab === "lesson") {
+      return Boolean(lessonInputs.topic.trim()) && Boolean(lessonInputs.priorLearning.trim());
+    }
+    if (activeTab === "resource") {
+      const priorOk = priorLearningRequired ? Boolean(resourceInputs.priorLearning.trim()) : true;
+      return Boolean(resourceInputs.topic.trim()) && priorOk && questionCountValid;
+    }
+    return Boolean(feedbackInputs.questionText.trim()) && Boolean(feedbackInputs.studentText.trim());
+  }, [activeTab, lessonInputs, resourceInputs, feedbackInputs, priorLearningRequired, questionCountValid]);
+
+  const combinedInput = useMemo(() => {
+    if (activeTab === "lesson") {
+      return [lessonInputs.topic, lessonInputs.priorLearning, lessonInputs.notes].filter(Boolean).join(" ");
+    }
+    if (activeTab === "resource") {
+      return [resourceInputs.topic, resourceInputs.priorLearning, resourceInputs.notes].filter(Boolean).join(" ");
+    }
+    return [feedbackInputs.questionText, feedbackInputs.studentText, feedbackInputs.rubric].filter(Boolean).join(" ");
+  }, [activeTab, lessonInputs, resourceInputs, feedbackInputs]);
+
+  const ensureConfirm = () => {
+    const confirmed = sessionStorage.getItem(STORAGE_CONFIRM_KEY) === "true";
+    if (!confirmed) {
+      setShowConfirmModal(true);
+      setPendingAction("generate");
+      return false;
+    }
+    return true;
+  };
+
+  const handleConfirmModal = () => {
+    sessionStorage.setItem(STORAGE_CONFIRM_KEY, "true");
+    setShowConfirmModal(false);
+    if (pendingAction === "generate") {
+      handleGenerate();
+    }
+    setPendingAction(null);
+  };
+
+  const handleConfirmCancel = () => {
+    setShowConfirmModal(false);
+    setPendingAction(null);
+  };
+
+  const handlePiiConfirm = async () => {
+    setShowPiiModal(false);
+    await handleGenerate();
+  };
+
+  const handlePiiCancel = () => {
+    setShowPiiModal(false);
+  };
+
+  const handleGenerate = async () => {
+    if (!ensureConfirm()) return;
+
+    if (containsPii(combinedInput)) {
+      setShowPiiModal(true);
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+
+    try {
+      const payload =
+        activeTab === "lesson"
+          ? {
+              mode: "lesson",
+              topic: lessonInputs.topic,
+              grade: lessonInputs.grade,
+              lesson_type: lessonInputs.lessonType,
+              duration: lessonInputs.duration,
+              class_ability: lessonInputs.classAbility,
+              class_profile: lessonInputs.classProfile,
+              curriculum_key: lessonInputs.curriculumKey,
+              prior_learning: lessonInputs.priorLearning,
+              notes: lessonInputs.notes,
+            }
+          : activeTab === "resource"
+          ? {
+              mode: "resource",
+              topic: resourceInputs.topic,
+              grade: resourceInputs.grade,
+              class_ability: resourceInputs.classAbility,
+              curriculum_key: resourceInputs.curriculumKey,
+              resource_type: resourceInputs.resourceType,
+              ...(resourceInputs.resourceType !== "slides_pack"
+                ? { resource_count: questionCountNumber }
+                : {}),
+              prior_learning: resourceInputs.priorLearning,
+              notes: resourceInputs.notes,
+            }
+          : {
+              mode: "feedback",
+              grade: feedbackInputs.grade,
+              class_ability: feedbackInputs.classAbility,
+              curriculum_key: feedbackInputs.curriculumKey,
+              assessment_type: feedbackInputs.assessmentType,
+              question_text: feedbackInputs.questionText,
+              student_text: feedbackInputs.studentText,
+              total_marks: feedbackInputs.totalMarks,
+              rubric: feedbackInputs.rubric,
+            };
+
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const details = errorText.trim();
+        const message = details
+          ? `Unable to generate output.\n\nDetails:\n${details}`
+          : "Unable to generate output.";
+        throw new Error(message);
+      }
+
+      const data = await response.json();
+      if (activeTab === "resource") {
+        const base = {
+          kind: "resource" as const,
+          resource_kind: data.resource_kind,
+          title: data.title,
+          citations: data.citations || [],
+          formatWarning: data.formatWarning,
+          curriculumWarning: data.curriculumWarning,
+          message: data.message || null,
+          debug: data.debug,
+        };
+
+        let output: ResourceOutputState;
+        if (data.resource_kind === "worksheet") {
+          output = {
+            ...base,
+            resource_kind: "worksheet",
+            teacher_instructions: data.teacher_instructions,
+            questions: data.questions || [],
+            answers: data.answers || [],
+          };
+        } else if (data.resource_kind === "mcq") {
+          output = {
+            ...base,
+            resource_kind: "mcq",
+            teacher_instructions: data.teacher_instructions,
+            questions: data.questions || [],
+            answer_key: data.answer_key || [],
+          };
+        } else {
+          output = {
+            ...base,
+            resource_kind: "slides_pack",
+            slides: data.slides || [],
+          };
+        }
+
+        setTabOutputs((prev) => ({ ...prev, [activeTab]: output }));
+      } else {
+        const output: GenericOutputState = {
+          kind: "generic",
+          title: data.title,
+          sections: data.sections || [],
+          citations: data.citations || [],
+          formatWarning: data.formatWarning,
+          curriculumWarning: data.curriculumWarning,
+          message: data.message || null,
+        };
+        setTabOutputs((prev) => ({ ...prev, [activeTab]: output }));
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Something went wrong.";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReset = () => {
+    if (activeTab === "lesson") {
+      setLessonInputs(defaultLessonInputs);
+    } else if (activeTab === "resource") {
+      setResourceInputs(defaultResourceInputs);
+    } else {
+      setFeedbackInputs(defaultFeedbackInputs);
+    }
+    setTabOutputs((prev) => ({ ...prev, [activeTab]: null }));
+    setError(null);
+  };
+
+  return (
+    <AppShell schoolName={schoolName}>
+      <div className="space-y-6">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">
+                Teacher planning workspace
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Do not paste student personal data. This is a demo with minimal internal logging.
+              </p>
+            </div>
+            <Tabs active={activeTab} onChange={(tab) => setActiveTab(tab as TabKey)} />
+          </div>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-[1.05fr_1fr]">
+          <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <strong>Reminder:</strong> Do not paste student personal data. If detected, you will be asked to confirm.
+            </div>
+
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">{summary.title}</h3>
+              <ul className="mt-2 list-disc pl-5 text-sm text-slate-600">
+                {summary.bullets.map((bullet) => (
+                  <li key={bullet}>{bullet}</li>
+                ))}
+              </ul>
+            </div>
+
+            {activeTab === "lesson" ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextField
+                  id="topic"
+                  label="Topic"
+                  value={lessonInputs.topic}
+                  onChange={(value) => setLessonInputs((prev) => ({ ...prev, topic: value }))}
+                  placeholder="Cells and specialised cells"
+                />
+                <SelectField
+                  id="grade"
+                  label="Grade"
+                  value={lessonInputs.grade}
+                  options={gradeOptions}
+                  onChange={(value) => setLessonInputs((prev) => ({ ...prev, grade: value }))}
+                />
+                <SelectField
+                  id="lesson-type"
+                  label="Lesson type"
+                  value={lessonInputs.lessonType}
+                  options={lessonTypeOptions}
+                  onChange={(value) => setLessonInputs((prev) => ({ ...prev, lessonType: value }))}
+                />
+                <SelectField
+                  id="duration"
+                  label="Duration"
+                  value={lessonInputs.duration}
+                  options={durationOptions}
+                  onChange={(value) => setLessonInputs((prev) => ({ ...prev, duration: value }))}
+                />
+                <SelectField
+                  id="class-ability"
+                  label="Class ability"
+                  value={lessonInputs.classAbility}
+                  options={abilityOptions}
+                  onChange={(value) => setLessonInputs((prev) => ({ ...prev, classAbility: value }))}
+                />
+                <SelectField
+                  id="curriculum"
+                  label="Curriculum"
+                  value={lessonInputs.curriculumKey}
+                  options={curriculumOptions}
+                  onChange={(value) => setLessonInputs((prev) => ({ ...prev, curriculumKey: value }))}
+                />
+                <TextField
+                  id="prior-learning"
+                  label="Prior learning / previous lesson (required)"
+                  value={lessonInputs.priorLearning}
+                  onChange={(value) => setLessonInputs((prev) => ({ ...prev, priorLearning: value }))}
+                  placeholder="Key ideas from the previous lesson"
+                />
+              </div>
+            ) : null}
+
+            {activeTab === "resource" ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextField
+                  id="topic"
+                  label="Topic"
+                  value={resourceInputs.topic}
+                  onChange={(value) => setResourceInputs((prev) => ({ ...prev, topic: value }))}
+                  placeholder="Cells and specialised cells"
+                />
+                <SelectField
+                  id="grade"
+                  label="Grade"
+                  value={resourceInputs.grade}
+                  options={gradeOptions}
+                  onChange={(value) => setResourceInputs((prev) => ({ ...prev, grade: value }))}
+                />
+                <SelectField
+                  id="curriculum"
+                  label="Curriculum"
+                  value={resourceInputs.curriculumKey}
+                  options={curriculumOptions}
+                  onChange={(value) => setResourceInputs((prev) => ({ ...prev, curriculumKey: value }))}
+                />
+                <SelectField
+                  id="resource-type"
+                  label="Resource type"
+                  value={resourceInputs.resourceType}
+                  options={resourceTypeOptions}
+                  onChange={(value) => setResourceInputs((prev) => ({ ...prev, resourceType: value }))}
+                />
+                {resourceInputs.resourceType !== "slides_pack" ? (
+                  <TextField
+                    id="question-count"
+                    label={countConfig.label}
+                    value={resourceInputs.questionCount}
+                    onChange={(value) =>
+                      setResourceInputs((prev) => ({ ...prev, questionCount: value }))
+                    }
+                    placeholder={countConfig.defaultValue}
+                  />
+                ) : null}
+                <SelectField
+                  id="class-ability"
+                  label="Class ability"
+                  value={resourceInputs.classAbility}
+                  options={abilityOptions}
+                  onChange={(value) => setResourceInputs((prev) => ({ ...prev, classAbility: value }))}
+                />
+                {resourceInputs.resourceType === "slides_pack" ? (
+                  <TextField
+                    id="prior-learning"
+                    label="Prior learning / previous lesson (required)"
+                    value={resourceInputs.priorLearning}
+                    onChange={(value) => setResourceInputs((prev) => ({ ...prev, priorLearning: value }))}
+                    placeholder="Key ideas from the previous lesson"
+                  />
+                ) : null}
+                {questionCountError ? (
+                  <p className="text-xs text-red-600">{questionCountError}</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {activeTab === "feedback" ? (
+              <div className="space-y-4">
+                <SelectField
+                  id="assessment-type"
+                  label="Assessment type"
+                  value={feedbackInputs.assessmentType}
+                  options={assessmentTypeOptions}
+                  onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, assessmentType: value }))}
+                />
+                <SelectField
+                  id="grade"
+                  label="Grade"
+                  value={feedbackInputs.grade}
+                  options={gradeOptions}
+                  onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, grade: value }))}
+                />
+                <SelectField
+                  id="class-ability"
+                  label="Class ability"
+                  value={feedbackInputs.classAbility}
+                  options={abilityOptions}
+                  onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, classAbility: value }))}
+                />
+                <SelectField
+                  id="curriculum"
+                  label="Curriculum"
+                  value={feedbackInputs.curriculumKey}
+                  options={curriculumOptions}
+                  onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, curriculumKey: value }))}
+                />
+                <TextAreaField
+                  id="question-text"
+                  label="Question(s) set (required)"
+                  value={feedbackInputs.questionText}
+                  onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, questionText: value }))}
+                  placeholder="Paste the exact prompt or question(s) given to the student."
+                  rows={4}
+                />
+                <TextAreaField
+                  id="student-text"
+                  label="Student response / work (required)"
+                  value={feedbackInputs.studentText}
+                  onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, studentText: value }))}
+                  placeholder="Paste anonymised student work here."
+                  rows={6}
+                />
+              </div>
+            ) : null}
+
+            {activeTab === "lesson" ? (
+              <>
+                <details
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                  open={advancedOpen.lesson}
+                  onToggle={() =>
+                    setAdvancedOpen((prev) => ({ ...prev, lesson: !prev.lesson }))
+                  }
+                >
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-700">
+                    Advanced options
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <TextField
+                      id="class-profile"
+                      label="Class profile"
+                      value={lessonInputs.classProfile}
+                      onChange={(value) => setLessonInputs((prev) => ({ ...prev, classProfile: value }))}
+                    />
+                    <TextAreaField
+                      id="notes"
+                      label="Notes / context"
+                      value={lessonInputs.notes}
+                      onChange={(value) => setLessonInputs((prev) => ({ ...prev, notes: value }))}
+                      rows={3}
+                    />
+                  </div>
+                </details>
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <h4 className="text-sm font-semibold text-slate-800">
+                    Plan from textbook photo/scan (Coming soon)
+                  </h4>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Coming soon: upload a photo/scan of a textbook page and generate a lesson based on it.
+                  </p>
+                  <input
+                    type="file"
+                    disabled
+                    accept="image/*,.pdf"
+                    className="mt-3 w-full rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500"
+                  />
+                </div>
+              </>
+            ) : null}
+
+            {activeTab === "resource" ? (
+              <details
+                className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                open={advancedOpen.resource}
+                onToggle={() =>
+                  setAdvancedOpen((prev) => ({ ...prev, resource: !prev.resource }))
+                }
+              >
+                <summary className="cursor-pointer text-sm font-semibold text-slate-700">
+                  Advanced options
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <TextAreaField
+                    id="notes"
+                    label="Notes / context"
+                    value={resourceInputs.notes}
+                    onChange={(value) => setResourceInputs((prev) => ({ ...prev, notes: value }))}
+                    rows={3}
+                  />
+                  {advancedOpen.resource &&
+                  currentOutput &&
+                  currentOutput.kind === "resource" &&
+                  currentOutput.debug ? (
+                    <p className="text-xs text-slate-500">
+                      Debug: {currentOutput.debug.resource_kind || "n/a"} ·{" "}
+                      {currentOutput.debug.curriculum || "n/a"} · Starter retrieval{" "}
+                      {currentOutput.debug.starter_retrieval_used ? "used" : "not used"}
+                    </p>
+                  ) : null}
+                </div>
+              </details>
+            ) : null}
+
+            {activeTab === "feedback" ? (
+              <>
+                <details
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                  open={advancedOpen.feedback}
+                  onToggle={() =>
+                    setAdvancedOpen((prev) => ({ ...prev, feedback: !prev.feedback }))
+                  }
+                >
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-700">
+                    Advanced options
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <TextField
+                      id="total-marks"
+                      label="Total marks (optional)"
+                      value={feedbackInputs.totalMarks}
+                      onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, totalMarks: value }))}
+                    />
+                    <TextAreaField
+                      id="rubric"
+                      label="Rubric / mark scheme (optional)"
+                      value={feedbackInputs.rubric}
+                      onChange={(value) => setFeedbackInputs((prev) => ({ ...prev, rubric: value }))}
+                      rows={3}
+                    />
+                  </div>
+                </details>
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <h4 className="text-sm font-semibold text-slate-800">
+                    Feedback (Upload) — Coming soon
+                  </h4>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Coming soon: upload a photo/scan of student work for feedback. For now, paste the question and student response.
+                  </p>
+                  <input
+                    type="file"
+                    disabled
+                    accept="image/*,.pdf"
+                    className="mt-3 w-full rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500"
+                  />
+                </div>
+              </>
+            ) : null}
+
+            {loading ? (
+              <div className="space-y-2">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full w-1/2 animate-pulse rounded-full bg-indigo-500" />
+                </div>
+                <p className="text-xs text-slate-500">Generating your output…</p>
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={!canGenerate || loading}
+                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? "Generating…" : "Generate"}
+              </button>
+              {currentOutput &&
+              (currentOutput.kind === "resource" ||
+                (currentOutput.kind === "generic" && currentOutput.sections.length)) ? (
+                <DownloadButton
+                  title={currentOutput.title}
+                  topic={
+                    activeTab === "lesson"
+                      ? lessonInputs.topic
+                      : activeTab === "feedback"
+                      ? feedbackInputs.questionText
+                      : resourceInputs.topic
+                  }
+                  mode={activeTab}
+                  sections={currentOutput.kind === "generic" ? currentOutput.sections : undefined}
+                  citations={currentOutput.citations}
+                  resource={
+                    currentOutput.kind === "resource"
+                      ? {
+                          resource_kind: currentOutput.resource_kind,
+                          title: currentOutput.title,
+                          teacher_instructions:
+                            currentOutput.resource_kind !== "slides_pack"
+                              ? currentOutput.teacher_instructions
+                              : undefined,
+                          questions:
+                            currentOutput.resource_kind === "worksheet" ||
+                            currentOutput.resource_kind === "mcq"
+                              ? currentOutput.questions
+                              : undefined,
+                          answers:
+                            currentOutput.resource_kind === "worksheet"
+                              ? currentOutput.answers
+                              : undefined,
+                          answer_key:
+                            currentOutput.resource_kind === "mcq"
+                              ? currentOutput.answer_key
+                              : undefined,
+                          slides:
+                            currentOutput.resource_kind === "slides_pack"
+                              ? currentOutput.slides
+                              : undefined,
+                        }
+                      : undefined
+                  }
+                />
+              ) : null}
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={loading}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <div ref={outputRef}>
+            {currentOutput ? (
+              currentOutput.kind === "resource" ? (
+                <ResourceOutputViewer
+                  output={currentOutput}
+                  error={error}
+                  formatWarning={currentOutput.formatWarning}
+                  curriculumWarning={currentOutput.curriculumWarning}
+                  message={currentOutput.message}
+                />
+              ) : (
+                <OutputViewer
+                  title={currentOutput.title}
+                  sections={currentOutput.sections}
+                  citations={currentOutput.citations}
+                  error={error}
+                  formatWarning={currentOutput.formatWarning}
+                  curriculumWarning={currentOutput.curriculumWarning}
+                  message={currentOutput.message}
+                />
+              )
+            ) : (
+              <OutputViewer error={error} />
+            )}
+
+            {activeTab === "resource" && currentOutput ? (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                <h4 className="text-sm font-semibold text-slate-800">
+                  Suggested external resources
+                </h4>
+                <ul className="mt-2 space-y-1 text-sm text-indigo-600">
+                  {suggestedLinksForTopic(resourceInputs.topic).map((link) => (
+                    <li key={link.url}>
+                      <a href={link.url} target="_blank" rel="noreferrer" className="hover:underline">
+                        {link.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <PrivacyWarningModal
+        open={showPiiModal}
+        onCancel={handlePiiCancel}
+        onConfirm={handlePiiConfirm}
+      />
+      <ConfirmModal
+        open={showConfirmModal}
+        title="Confirm personal data"
+        description="Please confirm that no student personal data is included. This confirmation is required once per session."
+        confirmLabel="I confirm"
+        cancelLabel="Cancel"
+        onConfirm={handleConfirmModal}
+        onCancel={handleConfirmCancel}
+      />
+    </AppShell>
+  );
+}
